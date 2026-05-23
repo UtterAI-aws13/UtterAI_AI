@@ -1,3 +1,6 @@
+# FastAPI 앱 진입점
+# 라우터를 등록하고 uvicorn으로 실행한다
+# 실행: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 from fastapi import FastAPI
 from app.api import health, jobs, rag
 
