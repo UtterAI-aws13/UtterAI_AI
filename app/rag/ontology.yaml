@@ -1,0 +1,82 @@
+concepts:
+  MLU:
+    ko: "평균 발화 길이"
+    related_terms:
+      - "평균 발화 길이"
+      - "형태소 수"
+      - "문장 길이"
+      - "발화 복잡도"
+      - "표현언어"
+    metrics:
+      - "mlu_morpheme"
+    language_area:
+      - "expressive_language"
+
+  TTR:
+    ko: "어휘 다양도"
+    related_terms:
+      - "Type Token Ratio"
+      - "어휘 다양성"
+      - "어휘 다양도"
+      - "NDW"
+      - "NTW"
+    metrics:
+      - "ttr"
+      - "ndw"
+      - "ntw"
+    language_area:
+      - "vocabulary"
+
+  NDW:
+    ko: "서로 다른 낱말 수"
+    related_terms:
+      - "Number of Different Words"
+      - "어휘 다양성"
+      - "서로 다른 낱말"
+    metrics:
+      - "ndw"
+    language_area:
+      - "vocabulary"
+
+  NTW:
+    ko: "총 낱말 수"
+    related_terms:
+      - "Number of Total Words"
+      - "총 발화량"
+      - "발화량"
+    metrics:
+      - "ntw"
+    language_area:
+      - "expressive_language"
+
+  response_latency:
+    ko: "반응 지연 시간"
+    related_terms:
+      - "반응 지연"
+      - "발화 반응 시간"
+      - "차례 맞추기"
+      - "대화 차례"
+    metrics:
+      - "average_response_latency_sec"
+    language_area:
+      - "pragmatics"
+
+  SOAP_note:
+    ko: "SOAP 노트"
+    related_terms:
+      - "SOAP Note"
+      - "세션 기록"
+      - "치료 기록"
+      - "임상 기록"
+      - "리포트"
+    language_area:
+      - "clinical_documentation"
+
+  diarization:
+    ko: "화자 분리"
+    related_terms:
+      - "화자 구분"
+      - "아동 발화"
+      - "치료사 발화"
+    language_area:
+      - "speech_processing"
