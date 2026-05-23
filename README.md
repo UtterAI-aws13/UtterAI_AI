@@ -1,5 +1,37 @@
 ## UtterAI AI Module
 
+---
+
+### 진행 상황
+
+#### 완료
+- [x] 레포 구조 생성 및 기본 설정 파일 (`Dockerfile`, `requirements.txt`, `.env.example`)
+- [x] 설계 문서 작성 (`docs/AI_IMPLEMENTATION_GUIDE.md`)
+- [x] 공통 Schema 정의 (`schemas/job`, `audio`, `segment`, `transcript`, `metrics`, `rag`, `report`)
+- [x] 모델 Wrapper 스켈레톤 (`vad_silero`, `asr_whisper`, `diarization_pyannote`, `embedding_kure`, `llm_exaone`)
+- [x] 파이프라인 스켈레톤 (`audio_preprocess`, `alignment`, `metrics_pipeline`, `report_pipeline`, `analysis_pipeline`)
+- [x] 언어 지표 계산 로직 구현 (`metrics/mlu`, `lexical_diversity`, `response_latency`)
+- [x] RAG 도메인 개념 사전 (`rag/ontology.yaml`)
+- [x] RAG Semantic Layer 구현 (`rag/semantic_layer.py` — 쿼리 확장 + 메타데이터 필터)
+- [x] EXAONE 프롬프트 빌더 구현 (`rag/prompt_templates.py`)
+- [x] API 스켈레톤 (`api/health`, `jobs`, `rag`)
+- [x] Worker 스켈레톤 (`workers/analysis_worker`, `rag_ingest_worker`)
+- [x] Storage 스켈레톤 (`storage/s3_client`, `db`)
+
+#### 진행 예정 (구현 순서)
+- [ ] **3단계** VAD 단독 실행 — `app/models/vad_silero.py` `load` / `predict` 구현
+- [ ] **4단계** Whisper 단독 실행 — `app/models/asr_whisper.py` `load` / `predict` 구현
+- [ ] **5단계** pyannote 단독 실행 — `app/models/diarization_pyannote.py` `load` / `predict` 구현
+- [ ] **6단계** 발화 정렬 — `app/pipelines/alignment.py` `align_segments` 구현
+- [ ] **7단계** metrics_pipeline 연결 — `app/pipelines/metrics_pipeline.py` 구현 (개별 계산 함수는 완료)
+- [ ] **8단계** RAG ingest — `app/rag/ingest.py`, `chunker.py`, `vector_store.py` 구현
+- [ ] **9단계** RAG query — `app/rag/retriever.py` vector_store 연결
+- [ ] **10단계** LLM 리포트 생성 — `app/pipelines/report_pipeline.py` 구현
+- [ ] **11단계** Worker 통합 — `app/workers/analysis_worker.py` SQS 폴링 루프 구현
+- [ ] **12단계** Docker 빌드 검증 — 이미지 빌드 및 로컬 실행 확인
+
+---
+
 ### 1. 문서 목적
 
 이 문서는 `Utter_AI` 레포지토리에서 **AI 모델 처리, 음성 분석 파이프라인, RAG 기반 리포트 생성**을 구현하기 위한 기본 README입니다.
