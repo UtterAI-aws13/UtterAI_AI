@@ -29,6 +29,9 @@ ffmpeg-python
 soundfile
 librosa
 
+langgraph
+sentence-transformers
+
 pytest
 pytest-asyncio
 httpx

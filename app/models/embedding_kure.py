@@ -13,17 +13,18 @@ class KUREEmbeddingWrapper(BaseModelWrapper):
     """
     def __init__(self, model_name: str, device: str = "cpu"):
         self.model_name = model_name
-        self.device = device   # 문서 수가 많으면 cuda로 변경
+        self.device = device
         self.model = None
 
     def load(self) -> None:
-        # TODO: sentence-transformers 또는 transformers 기반 KURE-v1 로드
-        pass
+        from sentence_transformers import SentenceTransformer
+        self.model = SentenceTransformer(self.model_name, device=self.device)
 
     def predict(self, texts: list[str]) -> list[list[float]]:
         """텍스트 목록을 입력받아 각각의 1024차원 임베딩 벡터를 반환한다."""
-        # TODO: 텍스트 배치 임베딩 반환
-        return []
+        if self.model is None:
+            self.load()
+        return self.model.encode(texts, normalize_embeddings=True).tolist()
 
     def unload(self) -> None:
         self.model = None
