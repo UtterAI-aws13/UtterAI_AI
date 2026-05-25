@@ -1,95 +1,201 @@
 ## UtterAI AI Module
 
----
-
-### 진행 상황
-
-#### 완료
-- [x] 레포 구조 생성 및 기본 설정 파일 (`Dockerfile`, `requirements.txt`, `.env.example`)
-- [x] 설계 문서 작성 (`docs/AI_IMPLEMENTATION_GUIDE.md`)
-- [x] 공통 Schema 정의 (`schemas/job`, `audio`, `segment`, `transcript`, `metrics`, `rag`, `report`)
-- [x] 모델 Wrapper 스켈레톤 (`vad_silero`, `asr_whisper`, `diarization_pyannote`, `embedding_kure`, `llm_exaone`)
-- [x] 파이프라인 스켈레톤 (`audio_preprocess`, `alignment`, `metrics_pipeline`, `report_pipeline`, `analysis_pipeline`)
-- [x] 언어 지표 계산 로직 구현 (`metrics/mlu`, `lexical_diversity`, `response_latency`)
-- [x] RAG 도메인 개념 사전 (`rag/ontology.yaml`)
-- [x] RAG Semantic Layer 구현 (`rag/semantic_layer.py` — 쿼리 확장 + 메타데이터 필터)
-- [x] EXAONE 프롬프트 빌더 구현 (`rag/prompt_templates.py`)
-- [x] API 스켈레톤 (`api/health`, `jobs`, `rag`)
-- [x] Worker 스켈레톤 (`workers/analysis_worker`, `rag_ingest_worker`)
-- [x] Storage 스켈레톤 (`storage/s3_client`, `db`)
-- [x] **6단계** 발화 정렬 — `app/pipelines/alignment.py` `align_segments` 구현 (Kiwi 형태소 분석 포함)
-- [x] **7단계** metrics_pipeline 연결 — `app/pipelines/metrics_pipeline.py` 구현
-- [x] **8단계** RAG ingest — `app/rag/ingest.py`, `chunker.py`, `vector_store.py` 구현
-- [x] **9단계** RAG query — LangGraph StateGraph 기반 `rag_graph.py` + `retriever.py` 구현
-- [x] **10단계** LLM 리포트 생성 — `app/pipelines/report_pipeline.py` 구현 (JSON 파싱 retry + schema repair)
-- [x] KURE-v1 임베딩 모델 구현 — `app/models/embedding_kure.py` `load` / `predict` 구현
-- [x] EXAONE LLM 모델 구현 — `app/models/llm_exaone.py` `load` / `predict` 구현
-- [x] RAG 구현 문서 작성 (`docs/RAG_IMPLEMENTATION.md`)
-
-#### 진행 예정 (구현 순서)
-- [ ] **3단계** VAD 단독 실행 — `app/models/vad_silero.py` `load` / `predict` 구현
-- [ ] **4단계** Whisper 단독 실행 — `app/models/asr_whisper.py` `load` / `predict` 구현
-- [ ] **5단계** pyannote 단독 실행 — `app/models/diarization_pyannote.py` `load` / `predict` 구현
-- [ ] **11단계** Worker 통합 — `app/workers/analysis_worker.py` SQS 폴링 루프 구현
-- [ ] **12단계** Docker 빌드 검증 — 이미지 빌드 및 로컬 실행 확인
+언어치료 세션 음성을 분석해 SOAP Note 초안을 생성하는 AI 파이프라인 레포입니다.
 
 ---
 
-### 1. 문서 목적
+## 진행 상황
 
-이 문서는 `Utter_AI` 레포지토리에서 **AI 모델 처리, 음성 분석 파이프라인, RAG 기반 리포트 생성**을 구현하기 위한 기본 README입니다.
+### 기반 설정
 
-`Utter_AI` 레포는 전체 서비스 중에서 다음 영역만 담당합니다.
+| 상태 | 항목 |
+|------|------|
+| ✅ | 레포 구조 생성 및 기본 설정 파일 (`Dockerfile`, `requirements.txt`, `.env.example`) |
+| ✅ | 환경 변수 기반 설정 관리 (`app/config.py` — pydantic-settings) |
 
-| 구분 | 담당 여부 | 설명 |
-| --- | --- | --- |
-| 음성 업로드 화면 | 제외 | `UtterAI_FE` 담당 |
-| 사용자/세션 API | 제외 | `UtterAI_BE` 담당 |
-| AI 모델 추론 | 포함 | VAD, 화자 분리, STT, 임베딩, LLM |
-| 언어 지표 계산 | 포함 | MLU, NDW, NTW, TTR, 반응 지연 시간 |
-| RAG 검색 | 포함 | 언어발달/치료 문서 검색, 근거 추출 |
-| SOAP Note 초안 생성 | 포함 | 검색 근거 기반 LLM 리포트 초안 생성 |
-| 인프라 배포 정의 | 제외 | `UtterAI_Infra` 담당 |
+### `app/schemas/`
 
-현재 MVP 단계에서는 **모델을 새로 학습하거나 파인튜닝하지 않고**, Hugging Face에 공개된 모델을 가져와 추론 파이프라인에 연결하는 것을 우선 목표로 합니다.
+| 상태 | 항목 |
+|------|------|
+| ✅ | `job.py` — 분석 Job 요청/상태/실패 스키마 |
+| ✅ | `audio.py` — 오디오 파일 메타데이터 스키마 |
+| ✅ | `segment.py` — VAD / 화자 분리 / ASR 구간 스키마 |
+| ✅ | `transcript.py` — 형태소, 발화 단위(Utterance) 스키마 |
+| ✅ | `metrics.py` — 언어 지표 (MLU, NTW, NDW, TTR, latency) 스키마 |
+| ✅ | `rag.py` — RAG 청크, 검색 쿼리, 검색 결과 스키마 |
+| ✅ | `report.py` — SOAP Note, ClinicalFlag, ReportDraft 스키마 |
+
+### `app/models/`
+
+| 상태 | 항목 |
+|------|------|
+| ⬜ | `vad_silero.py` — Silero VAD `load` / `predict` 구현 |
+| ⬜ | `asr_whisper.py` — Whisper STT `load` / `predict` 구현 |
+| ⬜ | `diarization_pyannote.py` — pyannote 화자 분리 `load` / `predict` 구현 |
+| ✅ | `embedding_kure.py` — KURE-v1 임베딩 `load` / `predict` 구현 |
+| ✅ | `llm_exaone.py` — EXAONE LLM `load` / `predict` 구현 |
+
+### `app/pipelines/`
+
+| 상태 | 항목 |
+|------|------|
+| ✅ | `audio_preprocess.py` — ffmpeg 기반 오디오 전처리 스켈레톤 |
+| ✅ | `alignment.py` — VAD + 화자 분리 + STT 정렬 → Utterance 생성 (Kiwi 형태소 분석 포함) |
+| ✅ | `metrics_pipeline.py` — 화자별 MLU / NTW / NDW / TTR / 반응 지연 시간 계산 |
+| ✅ | `report_pipeline.py` — EXAONE 호출 + JSON 파싱 retry + schema repair |
+| ⬜ | `analysis_pipeline.py` — 전체 파이프라인 오케스트레이터 구현 |
+
+### `app/metrics/`
+
+| 상태 | 항목 |
+|------|------|
+| ✅ | `mlu.py` — 형태소 기준 MLU 계산 |
+| ✅ | `lexical_diversity.py` — NTW / NDW / TTR 계산 |
+| ✅ | `response_latency.py` — THERAPIST → CHILD 반응 지연 시간 계산 |
+
+### `app/rag/`
+
+| 상태 | 항목 |
+|------|------|
+| ✅ | `ontology.yaml` — 도메인 개념 사전 (MLU, TTR, SOAP 등) |
+| ✅ | `semantic_layer.py` — Kiwi 키워드 → ontology 기반 쿼리 확장 + 메타데이터 필터 |
+| ✅ | `prompt_templates.py` — EXAONE 입력 프롬프트 빌더 |
+| ✅ | `chunker.py` — 문장 단위 분할 + sliding window overlap |
+| ✅ | `ingest.py` — 문서 파일 → 청크 → 임베딩 → pgvector 저장 |
+| ✅ | `vector_store.py` — pgvector ORM + upsert / cosine similarity 검색 |
+| ✅ | `rag_graph.py` — LangGraph StateGraph 기반 RAG 쿼리 파이프라인 |
+| ✅ | `retriever.py` — rag_graph 래퍼 (외부 호출용) |
+
+### `app/api/`
+
+| 상태 | 항목 |
+|------|------|
+| ✅ | `health.py` — `/health/live`, `/health/ready` 엔드포인트 스켈레톤 |
+| ✅ | `jobs.py` — 분석 Job 생성/조회 엔드포인트 스켈레톤 |
+| ✅ | `rag.py` — RAG ingest / query 엔드포인트 스켈레톤 |
+
+### `app/workers/`
+
+| 상태 | 항목 |
+|------|------|
+| ⬜ | `analysis_worker.py` — SQS 폴링 루프 + 분석 파이프라인 연결 |
+| ⬜ | `rag_ingest_worker.py` — SQS 폴링 루프 + RAG 문서 ingest 연결 |
+
+### `app/storage/`
+
+| 상태 | 항목 |
+|------|------|
+| ✅ | `s3_client.py` — boto3 기반 S3 업로드/다운로드 스켈레톤 |
+| ✅ | `db.py` — SQLAlchemy async 엔진 + 세션 설정 |
+
+### `docs/`
+
+| 상태 | 항목 |
+|------|------|
+| ✅ | `AI_IMPLEMENTATION_GUIDE.md` — AI 모델 구현 상세 설계서 |
+| ✅ | `RAG_IMPLEMENTATION.md` — RAG 파이프라인 구현 상세 (indexing, LangGraph query) |
+| ✅ | `MODEL_LOADING_GUIDE.md` — 모델별 HF 자동 다운로드 방식 및 VRAM 요구사항 |
+| ✅ | `EKS_WORKER_ARCHITECTURE.md` — CPU/GPU Worker 분리 배포 및 KEDA 오토스케일링 |
 
 ---
 
-### 2. AI 모듈의 역할
+## 폴더 구조 및 역할
 
-UtterAI의 AI 모듈은 언어치료 세션 음성을 입력받아 다음 결과를 생성합니다.
+```
+app/
+├── config.py          환경 변수 로드 (pydantic-settings, .env 기반)
+├── main.py            FastAPI 앱 진입점, 라우터 등록
+│
+├── schemas/           서비스 전체에서 사용하는 데이터 계약 정의
+│                      모델 출력 → 파이프라인 → API → 저장 전 단계의 타입을 통일
+│
+├── models/            AI 모델 래퍼 (Hugging Face 모델 로드 + 추론)
+│                      load() 한 번 호출 후 predict()를 반복 사용하는 구조
+│                      VAD / ASR / 화자분리 / 임베딩 / LLM 각각 독립 파일
+│
+├── pipelines/         여러 모델과 계산 로직을 순서대로 연결하는 오케스트레이터
+│                      alignment: VAD + 화자분리 + STT 세 결과를 Utterance로 합침
+│                      metrics_pipeline: Utterance → 화자별 언어 지표 산출
+│                      report_pipeline: RAG 근거 + 지표 → EXAONE → SOAP Note 초안
+│                      analysis_pipeline: 전체 단계를 순서대로 실행하는 진입점
+│
+├── metrics/           언어 지표 계산 순수 함수 모음 (모델 의존 없음)
+│                      mlu.py: 형태소 기준 MLU
+│                      lexical_diversity.py: NTW / NDW / TTR
+│                      response_latency.py: THERAPIST → CHILD 반응 지연 시간
+│
+├── rag/               RAG(Retrieval-Augmented Generation) 전체 파이프라인
+│                      [Indexing] ingest → chunker → embedding → vector_store(pgvector)
+│                      [Query]    retriever → rag_graph(LangGraph) → semantic_layer → vector_store
+│                      ontology.yaml: 도메인 개념 사전 (키워드 확장에 사용)
+│                      prompt_templates.py: EXAONE 입력 프롬프트 조립
+│
+├── api/               FastAPI 라우터 (HTTP 엔드포인트)
+│                      health: 프로세스 생존 및 모델/DB 준비 상태 확인
+│                      jobs: 분석 Job 생성 및 상태 조회
+│                      rag: 문서 ingest, 검색, 리포트 초안 생성
+│
+├── workers/           SQS 폴링 루프 (비동기 Job 처리)
+│                      analysis_worker: CPU/GPU 파이프라인 순서 조율
+│                      rag_ingest_worker: 문서 업로드 → chunk → pgvector 저장
+│
+└── storage/           외부 저장소 클라이언트
+                       s3_client: 음성 파일 / 결과 JSON / RAG 문서 업로드·다운로드
+                       db.py: PostgreSQL(pgvector) async 연결 설정
+```
+
+---
+
+## 1. 이 레포의 담당 범위
+
+| 구분 | 담당 | 설명 |
+|---|---|---|
+| 음성 업로드 화면 | ❌ | `UtterAI_FE` 담당 |
+| 사용자/세션 API | ❌ | `UtterAI_BE` 담당 |
+| AI 모델 추론 | ✅ | VAD, 화자 분리, STT, 임베딩, LLM |
+| 언어 지표 계산 | ✅ | MLU, NDW, NTW, TTR, 반응 지연 시간 |
+| RAG 검색 | ✅ | 언어발달/치료 문서 검색, 근거 추출 |
+| SOAP Note 초안 생성 | ✅ | 검색 근거 기반 LLM 리포트 초안 생성 |
+| 인프라 배포 정의 | ❌ | `UtterAI_Infra` 담당 |
+
+---
+
+## 2. AI 모듈의 처리 흐름
 
 ```text
 원본 음성
-  -> 말한 구간 감지
-  -> 화자 분리
-  -> STT 전사
-  -> 발화 단위 정리
-  -> 언어 지표 계산
-  -> 관련 문서 RAG 검색
-  -> SOAP Note / 분석 리포트 초안 생성
-  -> 치료사 검토용 결과 반환
+  → 말한 구간 감지 (Silero VAD)
+  → 화자 분리 (pyannote)
+  → STT 전사 (Whisper)
+  → 발화 단위 정렬 (alignment + Kiwi 형태소 분석)
+  → 언어 지표 계산 (MLU / NTW / NDW / TTR / 반응 지연 시간)
+  → 관련 문서 RAG 검색 (KURE-v1 + pgvector + LangGraph)
+  → SOAP Note 초안 생성 (EXAONE)
+  → 치료사 검토용 결과 반환
 ```
 
-최종 결과는 **치료사를 대체하는 자동 진단 결과**가 아니라, 치료사가 검토하고 수정할 수 있는 **임상 업무 보조 초안**입니다.
+최종 결과는 **치료사를 대체하는 자동 진단 결과가 아니라**, 치료사가 검토하고 수정할 수 있는 **임상 업무 보조 초안**입니다.
 
 ---
 
-### 3. 확정 AI 모델 구성
+## 3. AI 모델 구성
 
-| 단계 | 사용 모델/라이브러리 | 실행 위치 | 역할 |
-| --- | --- | --- | --- |
-| VAD | `onnx-community/silero-vad` | CPU Worker | 음성에서 말한 구간과 침묵 구간 분리 |
-| 화자 분리 | `pyannote/speaker-diarization-3.1` | GPU Worker 권장 | 치료사/아동/보호자 등 화자별 발화 구간 분리 |
-| STT/ASR | `openai/whisper-large-v3-turbo` | GPU Worker 권장 | 음성을 텍스트로 전사 |
-| 형태소/키워드 분석 | `kiwipiepy` 기반 Kiwi | CPU Worker | 한국어 형태소 분석, 키워드 추출, RAG 질의 확장 |
-| 임베딩 | `nlpai-lab/KURE-v1` | CPU 또는 GPU Worker | 한국어 문서/질의 임베딩 생성 |
-| 리포트 생성 LLM | `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct` | GPU Worker 권장 | RAG 근거 기반 SOAP Note 초안 생성 |
-| 언어 지표 계산 | Python 계산 로직 | CPU Worker | MLU, NDW, NTW, TTR, 반응 지연 시간 계산 |
+| 단계 | 모델 | 실행 위치 | 역할 |
+|---|---|---|---|
+| VAD | `onnx-community/silero-vad` | CPU Worker | 말한 구간과 침묵 구간 분리 |
+| 화자 분리 | `pyannote/speaker-diarization-3.1` | GPU Worker | 화자별 발화 구간 분리 |
+| STT | `openai/whisper-large-v3-turbo` | GPU Worker | 음성 → 텍스트 전사 |
+| 형태소 분석 | `kiwipiepy` | CPU Worker | 한국어 형태소 분석, RAG 키워드 추출 |
+| 임베딩 | `nlpai-lab/KURE-v1` | CPU Worker | 문서/쿼리 1024차원 벡터 변환 |
+| LLM | `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct` | GPU Worker | SOAP Note 초안 생성 |
+| 언어 지표 | Python 계산 로직 | CPU Worker | MLU / NDW / NTW / TTR 계산 |
+
+모델은 코드에서 `load()` 호출 시 Hugging Face Hub에서 자동 다운로드됩니다.
+자세한 내용은 [`docs/MODEL_LOADING_GUIDE.md`](docs/MODEL_LOADING_GUIDE.md)를 참고합니다.
 
 ---
 
-### 4. 전체 처리 흐름
+## 4. 전체 처리 흐름
 
 ```mermaid
 flowchart LR
@@ -103,187 +209,48 @@ flowchart LR
     H --> I[언어 지표 계산]
     I --> J[RAG 문서 검색]
     J --> K[LLM 리포트 초안 생성]
-    K --> L[S3 결과 JSON/리포트 저장]
+    K --> L[S3 결과 JSON 저장]
     L --> M[RDS 메타데이터 저장]
     M --> N[Backend에서 결과 조회]
 ```
 
 ---
 
-### 5. 저장소 역할 분리
+## 5. 저장소 역할 분리
 
-AI 모듈에서 생성하는 데이터는 S3와 RDS에 나누어 저장합니다.
-
-| 저장 위치 | 저장 대상 | 이유 |
-| --- | --- | --- |
-| S3 | 원본 음성 파일 | 파일 크기가 크고 객체 저장에 적합 |
-| S3 | 전처리된 음성/세그먼트 음성 | 추후 재분석, 디버깅, 모델 개선용 |
-| S3 | transcript JSON | 긴 전사 결과를 파일 형태로 보관 |
-| S3 | report JSON / PDF / Markdown | 결과 리포트 파일 저장 |
-| S3 | RAG 원본 문서 | 기관 자료, 가이드라인, 치료 문서 보관 |
-| RDS PostgreSQL | 사용자/세션 메타데이터 | 서비스 조회와 관계형 관리 |
-| RDS PostgreSQL | 오디오 파일 메타데이터 | S3 key, duration, format, status |
-| RDS PostgreSQL | 화자/발화 메타데이터 | speaker_id, start_time, end_time |
-| RDS PostgreSQL | 언어 지표 | MLU, NDW, NTW, TTR 등 숫자 결과 |
-| RDS PostgreSQL | 리포트 상태 | 생성 중, 완료, 실패, 치료사 승인 여부 |
-| RDS PostgreSQL + pgvector | RAG chunk 임베딩 | 문서 검색을 위한 벡터 검색 |
+| 저장 위치 | 저장 대상 |
+|---|---|
+| S3 | 원본 음성, 전처리 음성, transcript JSON, report JSON, RAG 원본 문서 |
+| RDS PostgreSQL | 사용자/세션/오디오/화자/발화 메타데이터, 언어 지표, 리포트 상태 |
+| RDS + pgvector | RAG chunk 임베딩 (문서 벡터 검색) |
 
 ---
 
-### 6. 권장 레포 구조
-
-```text
-Utter_AI/
-├── README.md
-├── docs/
-│   └── AI_IMPLEMENTATION_GUIDE.md
-├── app/
-│   ├── main.py
-│   ├── config.py
-│   ├── api/
-│   │   ├── health.py
-│   │   ├── jobs.py
-│   │   └── rag.py
-│   ├── schemas/
-│   │   ├── job.py
-│   │   ├── transcript.py
-│   │   ├── metrics.py
-│   │   └── report.py
-│   ├── models/
-│   │   ├── vad_silero.py
-│   │   ├── diarization_pyannote.py
-│   │   ├── asr_whisper.py
-│   │   ├── embedding_kure.py
-│   │   └── llm_exaone.py
-│   ├── pipelines/
-│   │   ├── audio_pipeline.py
-│   │   ├── transcript_pipeline.py
-│   │   ├── metric_pipeline.py
-│   │   └── report_pipeline.py
-│   ├── rag/
-│   │   ├── ingest.py
-│   │   ├── chunker.py
-│   │   ├── retriever.py
-│   │   ├── semantic_layer.py
-│   │   ├── ontology.yaml
-│   │   └── prompt_templates.py
-│   ├── metrics/
-│   │   ├── mlu.py
-│   │   ├── lexical.py
-│   │   └── latency.py
-│   ├── workers/
-│   │   ├── analysis_worker.py
-│   │   └── rag_ingest_worker.py
-│   └── storage/
-│       ├── s3_client.py
-│       ├── db.py
-│       └── repositories.py
-├── tests/
-│   ├── unit/
-│   └── integration/
-├── scripts/
-│   ├── run_local_api.sh
-│   ├── run_worker.sh
-│   └── ingest_rag_docs.sh
-├── Dockerfile
-├── requirements.txt
-├── .env.example
-└── pyproject.toml
-```
-
----
-
-### 7. 로컬 실행 흐름
-
-#### 7.1 Python 환경 준비
+## 6. 로컬 실행
 
 ```bash
+# 환경 설정
 python -m venv .venv
+.venv\Scripts\activate      # Windows
+source .venv/bin/activate   # macOS / Linux
 
-# Windows
-.venv\Scripts\activate
-
-# macOS / Linux
-source .venv/bin/activate
-```
-
-```bash
-pip install --upgrade pip
 pip install -r requirements.txt
-```
+cp .env.example .env        # .env 에 HF_TOKEN 등 입력
 
-#### 7.2 환경 변수 설정
-
-`.env.example`을 복사해서 `.env`를 만듭니다.
-
-```bash
-cp .env.example .env
-```
-
-필수 환경 변수 예시는 다음과 같습니다.
-
-```env
-APP_ENV=local
-LOG_LEVEL=INFO
-
-HF_TOKEN=your_huggingface_token
-
-S3_BUCKET_UTTERAI_AUDIO=utterai-audio-dev
-S3_BUCKET_UTTERAI_REPORT=utterai-report-dev
-S3_BUCKET_UTTERAI_RAG=utterai-rag-dev
-
-DATABASE_URL=postgresql+psycopg://utterai:utterai@localhost:5432/utterai_ai
-
-VECTOR_DB_PROVIDER=pgvector
-EMBEDDING_MODEL_NAME=nlpai-lab/KURE-v1
-LLM_MODEL_NAME=LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct
-
-VAD_MODEL_NAME=onnx-community/silero-vad
-DIARIZATION_MODEL_NAME=pyannote/speaker-diarization-3.1
-ASR_MODEL_NAME=openai/whisper-large-v3-turbo
-```
-
-`pyannote` 계열 모델은 Hugging Face 토큰과 모델 접근 권한이 필요할 수 있습니다.
-
----
-
-### 8. API 실행
-
-```bash
+# API 실행
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
 
-헬스 체크:
-
-```bash
+# 헬스 체크
 curl http://localhost:8000/health/live
 curl http://localhost:8000/health/ready
 ```
 
 ---
 
-### 9. Worker 실행
-
-분석 Worker는 SQS 메시지를 받아 비동기 분석을 수행하는 구조를 기본으로 합니다.
-
-```bash
-python -m app.workers.analysis_worker
-```
-
-로컬 개발 단계에서는 SQS 없이 파일 경로를 직접 넘겨 테스트할 수 있습니다.
-
-```bash
-python -m app.pipelines.audio_pipeline \
-  --session-id local-session-001 \
-  --audio-path ./samples/session_001.wav
-```
-
----
-
-### 10. 핵심 API 초안
+## 7. 핵심 API
 
 | Method | Path | 설명 |
-| --- | --- | --- |
+|---|---|---|
 | `GET` | `/health/live` | 프로세스 생존 확인 |
 | `GET` | `/health/ready` | 모델/DB/S3 연결 준비 상태 확인 |
 | `POST` | `/ai/jobs` | 분석 Job 생성 요청 |
@@ -294,81 +261,20 @@ python -m app.pipelines.audio_pipeline \
 
 ---
 
-### 11. MVP 구현 범위
+## 8. 배포 구조
 
-#### 11.1 MVP에 포함
+CPU Worker와 GPU Worker를 EKS에서 분리 배포합니다.
 
-- S3에 있는 음성 파일을 읽어서 분석
-- Silero VAD로 말한 구간 추출
-- pyannote로 화자 분리
-- Whisper로 STT 전사
-- 화자별 발화 단위 정리
-- MLU, NDW, NTW, TTR, 반응 지연 시간 계산
-- RAG 문서 업로드, 청크, 임베딩, 검색
-- RAG 검색 결과 기반 SOAP Note 초안 JSON 생성
-- 분석 결과를 S3와 RDS에 저장
-- FastAPI 기반 테스트 API 제공
-- Docker 이미지 빌드 가능 상태 구성
+| Worker | 담당 모델 | 인스턴스 |
+|---|---|---|
+| CPU Worker | VAD, KURE-v1, Kiwi, 지표 계산, RAG 검색 | c5.xlarge |
+| GPU Worker | Whisper, pyannote, EXAONE | g4dn.xlarge (T4 16GB) |
 
-#### 11.2 MVP에서 제외
-
-- 모델 파인튜닝
-- 자동 진단 확정
-- 의료적 판단 자동화
-- 복잡한 실시간 스트리밍 처리
-- 완전한 멀티 리전 운영
-- EKS GPU Node Group 운영 자동화
-
-MVP에서는 **작동하는 분석 파이프라인**을 먼저 만들고, 이후 성능과 인프라를 확장합니다.
+자세한 내용은 [`docs/EKS_WORKER_ARCHITECTURE.md`](docs/EKS_WORKER_ARCHITECTURE.md)를 참고합니다.
 
 ---
 
-### 12. 배포 방향
-
-초기에는 다음 구조를 목표로 합니다.
-
-```text
-Backend API
-  -> S3에 원본 음성 업로드
-  -> SQS에 분석 요청 발행
-  -> AI Worker가 Job 처리
-  -> S3/RDS에 결과 저장
-  -> Backend API가 결과 조회
-```
-
-배포 단계별 방향은 다음과 같습니다.
-
-| 단계 | 실행 방식 | 설명 |
-| --- | --- | --- |
-| Local | FastAPI + 로컬 Worker | 모델 연동과 파이프라인 검증 |
-| Dev | Docker + ECS Fargate CPU Worker | VAD, Kiwi, RAG 검색, 메트릭 계산 중심 |
-| GPU 확장 | EKS GPU Node Group 또는 GPU EC2 Worker | Whisper, pyannote, EXAONE 처리 |
-| 운영 고도화 | SQS + Step Functions + CloudWatch | 비동기 작업 추적, 재시도, 장애 관찰 |
-
----
-
-### 13. 개발 우선순위
-
-| 순서 | 작업 | 목표 |
-| --- | --- | --- |
-| 1 | 레포 구조 생성 | AI 코드 영역 분리 |
-| 2 | 공통 설정/스키마 작성 | Job, Transcript, Metric, Report 계약 정의 |
-| 3 | VAD 단독 실행 | 음성 구간 추출 검증 |
-| 4 | Whisper 단독 실행 | STT 결과 JSON 생성 |
-| 5 | pyannote 단독 실행 | speaker segment 결과 생성 |
-| 6 | 발화 정렬 로직 구현 | speaker + transcript 병합 |
-| 7 | 언어 지표 계산 | MLU, NDW, NTW, TTR 산출 |
-| 8 | RAG 문서 ingest | chunk + embedding + pgvector 저장 |
-| 9 | RAG 검색 API | 질의 기반 근거 검색 |
-| 10 | LLM 리포트 생성 | SOAP Note 초안 JSON 생성 |
-| 11 | Worker 통합 | SQS 기반 비동기 처리 |
-| 12 | Docker화 | 배포 가능한 이미지 생성 |
-
----
-
-### 14. 결과물 예시
-
-AI 모듈의 최종 출력은 다음과 같은 구조를 목표로 합니다.
+## 9. 결과물 예시
 
 ```json
 {
@@ -415,7 +321,7 @@ AI 모듈의 최종 출력은 다음과 같은 구조를 목표로 합니다.
 
 ---
 
-### 15. 운영 원칙
+## 10. 운영 원칙
 
 - 원본 음성, 전사 결과, 리포트는 민감 데이터로 취급합니다.
 - 로그에는 원문 음성, 전체 전사문, 개인정보를 남기지 않습니다.
@@ -426,10 +332,11 @@ AI 모듈의 최종 출력은 다음과 같은 구조를 목표로 합니다.
 
 ---
 
-### 16. 관련 상세 문서
+## 11. 관련 문서
 
-자세한 구현 방식은 다음 문서를 참고합니다.
-
-```text
-docs/AI_IMPLEMENTATION_GUIDE.md
-```
+| 문서 | 내용 |
+|---|---|
+| [`docs/AI_IMPLEMENTATION_GUIDE.md`](docs/AI_IMPLEMENTATION_GUIDE.md) | AI 모델 구현 상세 설계서 |
+| [`docs/RAG_IMPLEMENTATION.md`](docs/RAG_IMPLEMENTATION.md) | RAG indexing / LangGraph query 파이프라인 구현 |
+| [`docs/MODEL_LOADING_GUIDE.md`](docs/MODEL_LOADING_GUIDE.md) | 모델별 HF 자동 다운로드 방식 및 VRAM 요구사항 |
+| [`docs/EKS_WORKER_ARCHITECTURE.md`](docs/EKS_WORKER_ARCHITECTURE.md) | CPU/GPU Worker 분리 배포 및 KEDA 오토스케일링 |
