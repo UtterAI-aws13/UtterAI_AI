@@ -17,16 +17,19 @@
 - [x] API 스켈레톤 (`api/health`, `jobs`, `rag`)
 - [x] Worker 스켈레톤 (`workers/analysis_worker`, `rag_ingest_worker`)
 - [x] Storage 스켈레톤 (`storage/s3_client`, `db`)
+- [x] **6단계** 발화 정렬 — `app/pipelines/alignment.py` `align_segments` 구현 (Kiwi 형태소 분석 포함)
+- [x] **7단계** metrics_pipeline 연결 — `app/pipelines/metrics_pipeline.py` 구현
+- [x] **8단계** RAG ingest — `app/rag/ingest.py`, `chunker.py`, `vector_store.py` 구현
+- [x] **9단계** RAG query — LangGraph StateGraph 기반 `rag_graph.py` + `retriever.py` 구현
+- [x] **10단계** LLM 리포트 생성 — `app/pipelines/report_pipeline.py` 구현 (JSON 파싱 retry + schema repair)
+- [x] KURE-v1 임베딩 모델 구현 — `app/models/embedding_kure.py` `load` / `predict` 구현
+- [x] EXAONE LLM 모델 구현 — `app/models/llm_exaone.py` `load` / `predict` 구현
+- [x] RAG 구현 문서 작성 (`docs/RAG_IMPLEMENTATION.md`)
 
 #### 진행 예정 (구현 순서)
 - [ ] **3단계** VAD 단독 실행 — `app/models/vad_silero.py` `load` / `predict` 구현
 - [ ] **4단계** Whisper 단독 실행 — `app/models/asr_whisper.py` `load` / `predict` 구현
 - [ ] **5단계** pyannote 단독 실행 — `app/models/diarization_pyannote.py` `load` / `predict` 구현
-- [ ] **6단계** 발화 정렬 — `app/pipelines/alignment.py` `align_segments` 구현
-- [ ] **7단계** metrics_pipeline 연결 — `app/pipelines/metrics_pipeline.py` 구현 (개별 계산 함수는 완료)
-- [ ] **8단계** RAG ingest — `app/rag/ingest.py`, `chunker.py`, `vector_store.py` 구현
-- [ ] **9단계** RAG query — `app/rag/retriever.py` vector_store 연결
-- [ ] **10단계** LLM 리포트 생성 — `app/pipelines/report_pipeline.py` 구현
 - [ ] **11단계** Worker 통합 — `app/workers/analysis_worker.py` SQS 폴링 루프 구현
 - [ ] **12단계** Docker 빌드 검증 — 이미지 빌드 및 로컬 실행 확인
 
