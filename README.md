@@ -341,3 +341,4 @@ CPU Worker와 GPU Worker를 EKS에서 분리 배포합니다.
 | [`docs/MODEL_LOADING_GUIDE.md`](docs/MODEL_LOADING_GUIDE.md) | 모델별 HF 자동 다운로드 방식 및 VRAM 요구사항 |
 | [`docs/EKS_WORKER_ARCHITECTURE.md`](docs/EKS_WORKER_ARCHITECTURE.md) | CPU/GPU Worker 분리 배포 및 KEDA 오토스케일링 |
 | [`docs/DATABASE_SETUP.md`](docs/DATABASE_SETUP.md) | PostgreSQL + pgvector 설치, 테이블 생성, RDS 운영 설정 |
+| [`docs/CODE_FLOW.md`](docs/CODE_FLOW.md) | .py 파일별 호출 순서, 입출력 타입, 내부 처리 상세 |
