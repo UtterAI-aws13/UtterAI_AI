@@ -11,6 +11,7 @@ def preprocess_audio(input_path: str, output_path: str) -> AudioMetadata:
     변환된 파일은 processed S3 버킷에 저장된다.
     """
     import subprocess
+    import shutil
     from pathlib import Path
     from app.utils.audio import get_audio_duration, validate_audio
 
@@ -18,9 +19,11 @@ def preprocess_audio(input_path: str, output_path: str) -> AudioMetadata:
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
+    ffmpeg_bin = shutil.which("ffmpeg") or str(Path(__file__).parent.parent.parent / "ffmpeg" / "ffmpeg.exe")
+
     result = subprocess.run(
         [
-            "ffmpeg", "-y",
+            ffmpeg_bin, "-y",
             "-i", input_path,
             "-ar", "16000",
             "-ac", "1",

@@ -3,7 +3,7 @@
 # 한국어 음성을 텍스트로 전사하고 segment별 timestamp를 함께 반환한다
 # timestamp가 있어야 화자 분리 결과와 정렬(alignment)할 수 있다
 from app.models.base import BaseModelWrapper
-from app.schemas import ASRResult
+from app.schemas import ASRResult, ASRSegment
 
 
 class WhisperASRWrapper(BaseModelWrapper):

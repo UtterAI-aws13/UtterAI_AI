@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+ffmpeg/
+tmp/
+*.wav
+*.mp3
+*.m4a
+.claude/

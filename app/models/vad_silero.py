@@ -31,20 +31,19 @@ class SileroVADWrapper(BaseModelWrapper):
         import onnxruntime as ort
         from huggingface_hub import hf_hub_download
 
-        model_path = hf_hub_download(repo_id=self.model_name, filename="silero_vad.onnx")
+        model_path = hf_hub_download(repo_id=self.model_name, filename="onnx/model.onnx")
         self.model = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
         self._np = np
 
     def _reset_state(self):
         np = self._np
-        self._h = np.zeros((2, 1, 64), dtype=np.float32)
-        self._c = np.zeros((2, 1, 64), dtype=np.float32)
+        self._state = np.zeros((2, 1, 128), dtype=np.float32)
         self._sr = np.array(16000, dtype=np.int64)
 
     def _speech_prob(self, chunk) -> float:
         x = chunk.reshape(1, -1).astype(self._np.float32)
-        out = self.model.run(None, {"input": x, "sr": self._sr, "h": self._h, "c": self._c})
-        prob, self._h, self._c = out
+        out = self.model.run(None, {"input": x, "sr": self._sr, "state": self._state})
+        prob, self._state = out
         return float(prob.squeeze())
 
     def predict(self, audio_path: str) -> list[SpeechSegment]:

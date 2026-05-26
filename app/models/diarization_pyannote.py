@@ -23,7 +23,7 @@ class PyannoteWrapper(BaseModelWrapper):
 
         self.pipeline = Pipeline.from_pretrained(
             self.model_name,
-            use_auth_token=self.hf_token or None,
+            token=self.hf_token or None,
         )
         if self.device == "cuda" and torch.cuda.is_available():
             self.pipeline.to(torch.device("cuda"))
