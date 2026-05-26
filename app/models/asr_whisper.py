@@ -19,13 +19,44 @@ class WhisperASRWrapper(BaseModelWrapper):
         self.pipeline = None
 
     def load(self) -> None:
-        # TODO: transformers pipeline 또는 faster-whisper 로드
-        pass
+        import torch
+        from transformers import pipeline
+
+        device = 0 if self.device == "cuda" and torch.cuda.is_available() else -1
+        dtype = torch.float16 if device == 0 else torch.float32
+
+        self.pipeline = pipeline(
+            "automatic-speech-recognition",
+            model=self.model_name,
+            device=device,
+            torch_dtype=dtype,
+        )
 
     def predict(self, audio_path: str) -> ASRResult:
         """음성 파일을 입력받아 전체 전사 텍스트와 timestamp 포함 구간 목록을 반환한다."""
-        # TODO: STT 추론 후 ASRResult 반환
-        return ASRResult(text="", segments=[])
+        result = self.pipeline(
+            audio_path,
+            generate_kwargs={"language": self.language},
+            return_timestamps=True,
+        )
+
+        full_text: str = result["text"].strip()
+        chunks: list[dict] = result.get("chunks", [])
+
+        asr_segments = []
+        for i, chunk in enumerate(chunks):
+            ts = chunk.get("timestamp") or (None, None)
+            start = float(ts[0]) if ts[0] is not None else 0.0
+            end = float(ts[1]) if ts[1] is not None else start + 1.0
+            asr_segments.append(ASRSegment(
+                asr_segment_id=f"asr_{i:03d}",
+                start_time=round(start, 3),
+                end_time=round(end, 3),
+                text=chunk["text"].strip(),
+                confidence=1.0,
+            ))
+
+        return ASRResult(text=full_text, segments=asr_segments)
 
     def unload(self) -> None:
         self.pipeline = None

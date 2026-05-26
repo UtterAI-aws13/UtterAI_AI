@@ -18,13 +18,31 @@ class PyannoteWrapper(BaseModelWrapper):
         self.pipeline = None
 
     def load(self) -> None:
-        # TODO: pyannote.audio Pipeline 로드 (use_auth_token=self.hf_token)
-        pass
+        from pyannote.audio import Pipeline
+        import torch
+
+        self.pipeline = Pipeline.from_pretrained(
+            self.model_name,
+            use_auth_token=self.hf_token or None,
+        )
+        if self.device == "cuda" and torch.cuda.is_available():
+            self.pipeline.to(torch.device("cuda"))
 
     def predict(self, audio_path: str) -> list[SpeakerSegment]:
         """음성 파일을 입력받아 화자별 시간 구간 목록을 반환한다."""
-        # TODO: 화자 분리 추론 후 SpeakerSegment 리스트 반환
-        return []
+        diarization = self.pipeline(audio_path)
+
+        segments: list[SpeakerSegment] = []
+        for i, (turn, _, speaker) in enumerate(diarization.itertracks(yield_label=True)):
+            segments.append(SpeakerSegment(
+                speaker_segment_id=f"spk_{i:03d}",
+                speaker_id=speaker,
+                speaker_role="UNKNOWN",
+                start_time=round(turn.start, 3),
+                end_time=round(turn.end, 3),
+            ))
+
+        return segments
 
     def unload(self) -> None:
         self.pipeline = None

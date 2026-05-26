@@ -3,19 +3,47 @@
 # preprocess_audio 파이프라인에서 호출한다
 
 
+from pathlib import Path
+
+SUPPORTED_SUFFIXES = {".wav", ".mp3", ".m4a", ".ogg", ".flac", ".webm"}
+MIN_DURATION_SEC = 3.0
+MAX_DURATION_SEC = 3600.0
+
+
 def get_audio_duration(audio_path: str) -> float:
-    """soundfile 또는 librosa로 음성 파일의 길이(초)를 반환한다."""
-    # TODO: soundfile 또는 librosa로 duration 측정
-    raise NotImplementedError
+    """soundfile → librosa 순으로 시도해 음성 파일 길이(초)를 반환한다."""
+    try:
+        import soundfile as sf
+        return sf.info(audio_path).duration
+    except Exception:
+        pass
+
+    try:
+        import librosa
+        return librosa.get_duration(path=audio_path)
+    except Exception:
+        pass
+
+    raise RuntimeError(f"오디오 길이 측정 실패: {audio_path}")
 
 
 def validate_audio(audio_path: str) -> None:
-    """포맷 체크와 길이 검사를 수행한다. 문제가 있으면 예외를 발생시킨다.
+    """포맷 체크와 길이 검사. 문제가 있으면 ValueError를 발생시킨다."""
+    path = Path(audio_path)
 
-    검사 항목:
-    - 지원 포맷 여부 (wav, mp3, m4a 등)
-    - 너무 짧은 파일 (VAD_NO_SPEECH 오류 방지)
-    - 너무 긴 파일 (Worker 처리 시간 초과 방지)
-    """
-    # TODO: 포맷 체크, 너무 짧거나 긴 파일 검사
-    raise NotImplementedError
+    if path.suffix.lower() not in SUPPORTED_SUFFIXES:
+        raise ValueError(
+            f"지원하지 않는 포맷: {path.suffix} (지원: {sorted(SUPPORTED_SUFFIXES)})"
+        )
+
+    duration = get_audio_duration(audio_path)
+
+    if duration < MIN_DURATION_SEC:
+        raise ValueError(
+            f"파일이 너무 짧음: {duration:.1f}s (최소 {MIN_DURATION_SEC}s)"
+        )
+
+    if duration > MAX_DURATION_SEC:
+        raise ValueError(
+            f"파일이 너무 김: {duration:.1f}s (최대 {MAX_DURATION_SEC / 3600:.0f}시간)"
+        )
