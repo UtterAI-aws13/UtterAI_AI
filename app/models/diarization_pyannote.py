@@ -30,7 +30,14 @@ class PyannoteWrapper(BaseModelWrapper):
 
     def predict(self, audio_path: str) -> list[SpeakerSegment]:
         """음성 파일을 입력받아 화자별 시간 구간 목록을 반환한다."""
-        diarization = self.pipeline(audio_path)
+        import torchaudio
+        # torchcodec/Windows DLL 문제 우회: 파일 경로 대신 waveform 텐서를 전달한다
+        waveform, sample_rate = torchaudio.load(audio_path)
+        diarization = self.pipeline({"waveform": waveform, "sample_rate": sample_rate})
+
+        # pyannote ≥3.3 returns DiarizeOutput with .speaker_diarization; older returns Annotation directly
+        if hasattr(diarization, "speaker_diarization"):
+            diarization = diarization.speaker_diarization
 
         segments: list[SpeakerSegment] = []
         for i, (turn, _, speaker) in enumerate(diarization.itertracks(yield_label=True)):

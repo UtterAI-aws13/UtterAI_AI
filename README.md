@@ -29,9 +29,9 @@
 
 | 상태 | 항목 |
 |------|------|
-| ⬜ | `vad_silero.py` — Silero VAD `load` / `predict` 구현 |
-| ⬜ | `asr_whisper.py` — Whisper STT `load` / `predict` 구현 |
-| ⬜ | `diarization_pyannote.py` — pyannote 화자 분리 `load` / `predict` 구현 |
+| ✅ | `vad_silero.py` — Silero VAD `load` / `predict` 구현 |
+| ✅ | `asr_whisper.py` — Whisper STT `load` / `predict` 구현 |
+| ✅ | `diarization_pyannote.py` — pyannote 화자 분리 `load` / `predict` 구현 (pyannote ≥ 3.3 DiarizeOutput 호환 포함) |
 | ✅ | `embedding_kure.py` — KURE-v1 임베딩 `load` / `predict` 구현 |
 | ✅ | `llm_exaone.py` — EXAONE LLM `load` / `predict` 구현 |
 
@@ -96,6 +96,7 @@
 | ✅ | `RAG_IMPLEMENTATION.md` — RAG 파이프라인 구현 상세 (indexing, LangGraph query) |
 | ✅ | `MODEL_LOADING_GUIDE.md` — 모델별 HF 자동 다운로드 방식 및 VRAM 요구사항 |
 | ✅ | `EKS_WORKER_ARCHITECTURE.md` — CPU/GPU Worker 분리 배포 및 KEDA 오토스케일링 |
+| ✅ | `AI_PIPELINE_OPTIMIZATION.md` — 모델별 병목 원인 분석 및 단계별 최적화 방법 |
 
 ---
 
@@ -268,9 +269,12 @@ CPU Worker와 GPU Worker를 EKS에서 분리 배포합니다.
 | Worker | 담당 모델 | 인스턴스 |
 |---|---|---|
 | CPU Worker | VAD, KURE-v1, Kiwi, 지표 계산, RAG 검색 | c5.xlarge |
-| GPU Worker | Whisper, pyannote, EXAONE | g4dn.xlarge (T4 16GB) |
+| ML GPU Worker | pyannote, Whisper | g4dn.xlarge (T4 16 GB) |
+| LLM GPU Worker | EXAONE | g5.xlarge (A10G 24 GB) |
 
-자세한 내용은 [`docs/EKS_WORKER_ARCHITECTURE.md`](docs/EKS_WORKER_ARCHITECTURE.md)를 참고합니다.
+GPU Worker는 pyannote + Whisper 담당과 EXAONE 담당으로 분리해 독립 스케일링합니다.
+모델 Cold Start 제거, VRAM 관리, 처리 시간 단축 방법은 [`docs/AI_PIPELINE_OPTIMIZATION.md`](docs/AI_PIPELINE_OPTIMIZATION.md)를 참고합니다.
+인프라 배포 구성 상세는 [`docs/EKS_WORKER_ARCHITECTURE.md`](docs/EKS_WORKER_ARCHITECTURE.md)를 참고합니다.
 
 ---
 
@@ -337,6 +341,7 @@ CPU Worker와 GPU Worker를 EKS에서 분리 배포합니다.
 | 문서 | 내용 |
 |---|---|
 | [`docs/AI_IMPLEMENTATION_GUIDE.md`](docs/AI_IMPLEMENTATION_GUIDE.md) | AI 모델 구현 상세 설계서 |
+| [`docs/AI_PIPELINE_OPTIMIZATION.md`](docs/AI_PIPELINE_OPTIMIZATION.md) | 모델별 병목 원인 분석 및 단계별 최적화 방법 |
 | [`docs/RAG_IMPLEMENTATION.md`](docs/RAG_IMPLEMENTATION.md) | RAG indexing / LangGraph query 파이프라인 구현 |
 | [`docs/MODEL_LOADING_GUIDE.md`](docs/MODEL_LOADING_GUIDE.md) | 모델별 HF 자동 다운로드 방식 및 VRAM 요구사항 |
 | [`docs/EKS_WORKER_ARCHITECTURE.md`](docs/EKS_WORKER_ARCHITECTURE.md) | CPU/GPU Worker 분리 배포 및 KEDA 오토스케일링 |
