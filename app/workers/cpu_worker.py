@@ -1,0 +1,59 @@
+# CPU Worker
+# utterai-dev-cpu-analysis-queue 폴링
+# 로드 모델: Silero VAD, KURE-v1 embedding
+# 담당 단계: 전처리 + VAD → S3 저장 → audio-ml-queue 발행
+import asyncio
+import json
+
+import boto3
+from loguru import logger
+
+from app.config import settings
+from app.schemas import JobMessage
+from app.pipelines.analysis_pipeline import run_cpu_stage, CPUModels
+from app.models.vad_silero import SileroVADWrapper
+from app.models.embedding_kure import KUREEmbeddingWrapper
+
+
+def _load_models() -> CPUModels:
+    vad = SileroVADWrapper(settings.vad_model_name)
+    vad.load()
+    logger.info("Silero VAD 로드 완료")
+
+    embedding = KUREEmbeddingWrapper(settings.embedding_model_name)
+    embedding.load()
+    logger.info("KURE embedding 로드 완료")
+
+    return CPUModels(vad=vad, embedding=embedding)
+
+
+def start_worker() -> None:
+    sqs = boto3.client("sqs", region_name=settings.aws_region)
+    models = _load_models()
+    logger.info(f"CPU Worker 시작. 큐: {settings.sqs_cpu_queue_url}")
+
+    while True:
+        response = sqs.receive_message(
+            QueueUrl=settings.sqs_cpu_queue_url,
+            MaxNumberOfMessages=1,
+            WaitTimeSeconds=20,
+            VisibilityTimeout=300,
+        )
+        messages = response.get("Messages", [])
+        if not messages:
+            continue
+
+        raw = messages[0]
+        receipt_handle = raw["ReceiptHandle"]
+        body = json.loads(raw["Body"])
+
+        try:
+            job = JobMessage(**body)
+            asyncio.run(run_cpu_stage(job, models))
+            sqs.delete_message(
+                QueueUrl=settings.sqs_cpu_queue_url,
+                ReceiptHandle=receipt_handle,
+            )
+            logger.info(f"CPU STAGE 완료: job_id={body.get('job_id')}")
+        except Exception as e:
+            logger.error(f"CPU STAGE 실패: {e}")

@@ -23,9 +23,14 @@ class Settings(BaseSettings):
     # DB - SQLAlchemy async 연결 URL (pgvector 확장 포함된 PostgreSQL)
     database_url: str = ""
 
-    # SQS - 비동기 Job 처리용 큐
-    sqs_analysis_queue_url: str = ""
-    sqs_rag_ingest_queue_url: str = ""
+    # Worker 타입 - Pod 환경변수로 주입 (cpu / ml-gpu / llm-gpu)
+    worker_type: str = "cpu"
+
+    # SQS - 3단계 파이프라인 큐
+    sqs_cpu_queue_url: str = ""        # cpu-worker 폴링
+    sqs_ml_gpu_queue_url: str = ""     # ml-gpu-worker 폴링
+    sqs_llm_queue_url: str = ""        # llm-gpu-worker 폴링
+    sqs_rag_ingest_queue_url: str = "" # rag-ingest-worker 폴링
 
     # 모델 이름 - Hugging Face Hub ID
     vad_model_name: str = "onnx-community/silero-vad"
