@@ -5,11 +5,27 @@ on:
     branches:
       - dev
       - main
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - "Dockerfile*"
+      - ".dockerignore"
+      - ".github/workflows/ai-ci.yaml"
   push:
     branches:
       - dev
       - main
       - "feature/**"
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - "Dockerfile*"
+      - ".dockerignore"
+      - ".github/workflows/ai-ci.yaml"
 
 permissions:
   contents: read
@@ -42,5 +58,8 @@ jobs:
       - name: Run tests
         run: pytest
 
-      - name: Docker build check
-        run: docker build -t utterai-ai:ci .
+      - name: Docker build CPU image check
+        run: docker build -f Dockerfile.cpu -t utterai-ai-cpu:ci .
+
+      - name: Docker build GPU image check
+        run: docker build -f Dockerfile.gpu -t utterai-ai-gpu:ci .
