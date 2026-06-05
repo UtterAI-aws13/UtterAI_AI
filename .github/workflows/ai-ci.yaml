@@ -1,0 +1,46 @@
+name: AI CI
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+  push:
+    branches:
+      - dev
+      - main
+      - "feature/**"
+
+permissions:
+  contents: read
+
+jobs:
+  ai-check:
+    runs-on: ubuntu-latest
+    env:
+      # CI에서는 실제 DB에 접속하지 않고 app import 가능 여부만 확인합니다.
+      DATABASE_URL: postgresql+psycopg://utterai:utterai@localhost:5432/utterai_ai
+      APP_ENV: ci
+      AWS_REGION: ap-northeast-2
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Import app
+        run: |
+          python -c "from app.main import app; print(app.title)"
+
+      - name: Run tests
+        run: pytest
+
+      - name: Docker build check
+        run: docker build -t utterai-ai:ci .
