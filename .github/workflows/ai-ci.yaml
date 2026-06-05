@@ -17,6 +17,11 @@ permissions:
 jobs:
   ai-check:
     runs-on: ubuntu-latest
+    env:
+      # CI에서는 실제 DB에 접속하지 않고 app import 가능 여부만 확인합니다.
+      DATABASE_URL: postgresql+psycopg://utterai:utterai@localhost:5432/utterai_ai
+      APP_ENV: ci
+      AWS_REGION: ap-northeast-2
     steps:
       - uses: actions/checkout@v4
 
