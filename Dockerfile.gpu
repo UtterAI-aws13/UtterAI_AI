@@ -1,0 +1,18 @@
+FROM pytorch/pytorch:2.1.0-cuda12.1-cudnn8-runtime
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.common.txt requirements.gpu.txt ./
+RUN pip install --upgrade pip && pip install -r requirements.gpu.txt
+
+COPY app ./app
+
+ENV PYTHONPATH=/app
+
+# ml-gpu-worker 기본값. llm-gpu-worker는 K8s Deployment command로 오버라이드.
+CMD ["python", "-m", "app.workers.ml_gpu_worker"]

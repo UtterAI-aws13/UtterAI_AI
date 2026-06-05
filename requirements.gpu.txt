@@ -1,0 +1,14 @@
+-r requirements.common.txt
+
+torch
+torchaudio
+transformers
+accelerate
+
+pyannote.audio
+sentence-transformers
+kiwipiepy
+
+ffmpeg-python
+soundfile
+librosa

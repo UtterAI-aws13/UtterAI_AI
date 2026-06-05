@@ -1,0 +1,10 @@
+-r requirements.common.txt
+
+onnxruntime
+huggingface_hub
+sentence-transformers
+kiwipiepy
+
+ffmpeg-python
+soundfile
+librosa

@@ -7,6 +7,8 @@ from app.schemas.job import (
     JobCreateResponse,
     JobStatusResponse,
     JobFailureInfo,
+    MLGpuMessage,
+    LLMMessage,
 )
 from app.schemas.audio import AudioMetadata
 from app.schemas.segment import SpeechSegment, SpeakerSegment, ASRSegment, ASRResult
@@ -18,6 +20,7 @@ from app.schemas.report import SOAPNote, ClinicalFlag, ModelVersions, ReportDraf
 __all__ = [
     "JobStatus", "JobOptions", "AudioInput", "JobMessage",
     "JobCreateRequest", "JobCreateResponse", "JobStatusResponse", "JobFailureInfo",
+    "MLGpuMessage", "LLMMessage",
     "AudioMetadata",
     "SpeechSegment", "SpeakerSegment", "ASRSegment", "ASRResult",
     "Morpheme", "Utterance", "UtteranceSource",
