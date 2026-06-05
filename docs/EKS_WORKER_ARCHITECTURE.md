@@ -30,7 +30,9 @@ EKS 클러스터 (utterai-cluster) — 1개 고정
 Backend API
     │
     ├─ S3에 원본 음성 업로드
-    └─ SQS에 분석 요청 발행
+    └─ POST /internal/ai/analysis-jobs (AI FastAPI)
+                   │
+                   └─ SQS에 분석 요청 발행
            │
            ▼
   SQS: cpu-analysis-queue

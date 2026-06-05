@@ -1,6 +1,6 @@
-# 분석 Job API
-# POST /ai/jobs  - Backend가 음성 분석을 요청할 때 Job을 생성하고 job_id를 즉시 반환
-# GET  /ai/jobs/{job_id} - 처리 단계와 진행 상태를 폴링할 때 사용
+# 분석 Job API (서비스 간 내부 전용)
+# POST /internal/ai/analysis-jobs          - Backend가 음성 분석을 요청할 때 Job을 생성하고 job_id를 즉시 반환
+# GET  /internal/ai/analysis-jobs/{job_id} - 처리 단계와 진행 상태를 폴링할 때 사용
 import json
 from datetime import datetime, timezone
 

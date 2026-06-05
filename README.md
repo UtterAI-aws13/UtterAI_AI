@@ -254,8 +254,8 @@ curl http://localhost:8000/health/ready
 |---|---|---|
 | `GET` | `/health/live` | 프로세스 생존 확인 |
 | `GET` | `/health/ready` | 모델/DB/S3 연결 준비 상태 확인 |
-| `POST` | `/ai/jobs` | 분석 Job 생성 요청 |
-| `GET` | `/ai/jobs/{job_id}` | 분석 Job 상태 조회 |
+| `POST` | `/internal/ai/analysis-jobs` | 분석 Job 생성 요청 (BE → AI 내부 전용) |
+| `GET` | `/internal/ai/analysis-jobs/{job_id}` | 분석 Job 상태 조회 (BE → AI 내부 전용) |
 | `POST` | `/ai/rag/ingest` | RAG 문서 수집/청크/임베딩 |
 | `POST` | `/ai/rag/query` | RAG 검색 테스트 |
 | `POST` | `/ai/reports/draft` | RAG 기반 리포트 초안 생성 |
