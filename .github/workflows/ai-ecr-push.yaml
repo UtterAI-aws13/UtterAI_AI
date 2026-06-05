@@ -63,7 +63,7 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
-      ECR_REPOSITORY: ${{ vars.ECR_AI_WORKER_REPOSITORY }}
+      ECR_REPOSITORY: ${{ vars.ECR_AI_CPU_REPOSITORY }}
       IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
 
     steps:
