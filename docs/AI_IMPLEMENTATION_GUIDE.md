@@ -1906,7 +1906,7 @@ S3_BUCKET_UTTERAI_RAG=utterai-rag-dev
 
 DATABASE_URL=postgresql+psycopg://utterai:utterai@localhost:5432/utterai_ai
 
-SQS_ANALYSIS_QUEUE_URL=
+SQS_RAG_INGEST_QUEUE_URL=
 SQS_RAG_INGEST_QUEUE_URL=
 
 VAD_MODEL_NAME=onnx-community/silero-vad
