@@ -270,24 +270,24 @@ GPU Worker Pod (pyannote → Whisper → EXAONE 순차)
 ### 개선: 2-Queue 분리로 EXAONE 격리
 
 ```
-audio-ml-queue               llm-queue
+gpu-inference-queue               report-analysis-queue
       │                           │
       ▼                           ▼
 ML Worker (g4dn.xlarge)     LLM Worker (g5.xlarge)
 pyannote + Whisper           EXAONE
       │                           ▲
       └── S3 중간 결과 저장 ───────┘
-          + llm-queue 메시지 발행
+          + report-analysis-queue 메시지 발행
 ```
 
-pyannote + Whisper 결과를 S3에 저장하고 `llm-queue`에 메시지를 넣으면 ML Worker와 LLM Worker가 독립적으로 스케일링됩니다.
+pyannote + Whisper 결과를 S3에 저장하고 `report-analysis-queue`에 메시지를 넣으면 ML Worker와 LLM Worker가 독립적으로 스케일링됩니다.
 
 **효과**: 세션이 몰릴 때 ML Worker 3개 + LLM Worker 2개처럼 독립 스케일링 가능.
 
 | Worker | 인스턴스 | 담당 | 스케일링 기준 |
 |---|---|---|---|
-| ML Worker | g4dn.xlarge (T4 16 GB) | pyannote + Whisper | `audio-ml-queue` 깊이 |
-| LLM Worker | g5.xlarge (A10G 24 GB) | EXAONE | `llm-queue` 깊이 |
+| ML Worker | g4dn.xlarge (T4 16 GB) | pyannote + Whisper | `gpu-inference-queue` 깊이 |
+| LLM Worker | g5.xlarge (A10G 24 GB) | EXAONE | `report-analysis-queue` 깊이 |
 
 ---
 
