@@ -101,7 +101,7 @@ async def run_cpu_stage(message: JobMessage, models: CPUModels) -> None:
         options=message.options,
     )
     _get_sqs().send_message(
-        QueueUrl=settings.sqs_ml_gpu_queue_url,
+        QueueUrl=settings.sqs_gpu_inference_queue_url,
         MessageBody=ml_msg.model_dump_json(),
     )
     logger.info(f"[{job_id}] CPU STAGE: DONE → audio-ml-queue 발행")
@@ -158,7 +158,7 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels) -> None
         options=message.options,
     )
     _get_sqs().send_message(
-        QueueUrl=settings.sqs_llm_queue_url,
+        QueueUrl=settings.sqs_report_analysis_queue_url,
         MessageBody=llm_msg.model_dump_json(),
     )
     logger.info(f"[{job_id}] ML GPU STAGE: DONE → llm-queue 발행")

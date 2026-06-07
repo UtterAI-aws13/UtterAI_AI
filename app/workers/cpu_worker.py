@@ -1,5 +1,5 @@
 # CPU Worker
-# utterai-dev-cpu-analysis-queue 폴링
+# utterai-dev-audio-preprocess-queue 폴링
 # 로드 모델: Silero VAD, KURE-v1 embedding
 # 담당 단계: 전처리 + VAD → S3 저장 → audio-ml-queue 발행
 import asyncio
@@ -30,11 +30,11 @@ def _load_models() -> CPUModels:
 def start_worker() -> None:
     sqs = boto3.client("sqs", region_name=settings.aws_region)
     models = _load_models()
-    logger.info(f"CPU Worker 시작. 큐: {settings.sqs_cpu_queue_url}")
+    logger.info(f"CPU Worker 시작. 큐: {settings.sqs_audio_preprocess_queue_url}")
 
     while True:
         response = sqs.receive_message(
-            QueueUrl=settings.sqs_cpu_queue_url,
+            QueueUrl=settings.sqs_audio_preprocess_queue_url,
             MaxNumberOfMessages=1,
             WaitTimeSeconds=20,
             VisibilityTimeout=300,
@@ -51,7 +51,7 @@ def start_worker() -> None:
             job = JobMessage(**body)
             asyncio.run(run_cpu_stage(job, models))
             sqs.delete_message(
-                QueueUrl=settings.sqs_cpu_queue_url,
+                QueueUrl=settings.sqs_audio_preprocess_queue_url,
                 ReceiptHandle=receipt_handle,
             )
             logger.info(f"CPU STAGE 완료: job_id={body.get('job_id')}")
