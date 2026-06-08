@@ -26,6 +26,61 @@ REPORT_OUTPUT_SCHEMA = """{
 }"""
 
 
+def build_bedrock_report_prompt(
+    metrics: dict,
+    utterances: list[dict],
+    session: dict,
+    evidence: list[dict],
+) -> str:
+    """Bedrock Claude 입력 프롬프트 생성. Mock dict 데이터 기반."""
+    age_months = session.get("patient_age_months", 0)
+    age_str = f"만 {age_months // 12}세 {age_months % 12}개월" if age_months else "나이 미상"
+
+    metrics_text = (
+        f"- MLU-m: {metrics.get('mlu_morpheme', 'N/A')}\n"
+        f"- NTW: {metrics.get('ntw', 'N/A')}\n"
+        f"- NDW: {metrics.get('ndw', 'N/A')}\n"
+        f"- TTR: {metrics.get('ttr', 'N/A')}\n"
+        f"- 평균 반응 지연: {metrics.get('average_response_latency_sec', 'N/A')}초\n"
+        f"- 최대 반응 지연: {metrics.get('max_response_latency_sec', 'N/A')}초\n"
+        f"- 총 발화 수 (아동): {metrics.get('total_utterances', 'N/A')}"
+    )
+
+    utterance_text = "\n".join(
+        f"{u.get('speaker_role', 'UNKNOWN')}: {u.get('text', '')}"
+        for u in utterances[:10]
+    )
+
+    evidence_text = "\n".join(
+        f"[{e.get('chunk_id', '?')}] {e.get('title', '')}: {e.get('content', '')[:200]}"
+        for e in evidence
+    ) if evidence else "(검색된 근거 없음)"
+
+    session_info = (
+        f"- 아동 연령: {age_str}\n"
+        f"- 세션 번호: {session.get('session_number', 'N/A')}회\n"
+        f"- 세션 날짜: {session.get('session_date', 'N/A')}"
+    )
+
+    return f"""{REPORT_SYSTEM_PROMPT}
+
+## 세션 정보
+{session_info}
+
+## 언어 지표 (아동)
+{metrics_text}
+
+## 대표 발화 (최대 10개)
+{utterance_text}
+
+## 검색 근거
+{evidence_text}
+
+## 출력 형식
+{REPORT_OUTPUT_SCHEMA}
+"""
+
+
 def build_report_prompt(
     utterances: list[Utterance],
     metrics: list[SpeakerMetrics],

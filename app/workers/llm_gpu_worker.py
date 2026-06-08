@@ -1,5 +1,5 @@
 # LLM GPU Worker
-# utterai-dev-llm-queue 폴링
+# utterai-dev-report-analysis-queue 폴링
 # 로드 모델: KURE-v1 embedding (RAG용), EXAONE LLM
 # 담당 단계: 정렬 + 지표 + RAG + EXAONE → 최종 S3/RDS 저장
 import asyncio
@@ -34,11 +34,11 @@ def _load_base_models() -> tuple[KUREEmbeddingWrapper, EXAONEWrapper]:
 def start_worker() -> None:
     sqs = boto3.client("sqs", region_name=settings.aws_region)
     embedding, llm = _load_base_models()
-    logger.info(f"LLM GPU Worker 시작. 큐: {settings.sqs_llm_queue_url}")
+    logger.info(f"LLM GPU Worker 시작. 큐: {settings.sqs_report_analysis_queue_url}")
 
     while True:
         response = sqs.receive_message(
-            QueueUrl=settings.sqs_llm_queue_url,
+            QueueUrl=settings.sqs_report_analysis_queue_url,
             MaxNumberOfMessages=1,
             WaitTimeSeconds=20,
             VisibilityTimeout=1800,
@@ -66,7 +66,7 @@ def start_worker() -> None:
 
             asyncio.run(_run())
             sqs.delete_message(
-                QueueUrl=settings.sqs_llm_queue_url,
+                QueueUrl=settings.sqs_report_analysis_queue_url,
                 ReceiptHandle=receipt_handle,
             )
             logger.info(f"LLM STAGE 완료: job_id={body.get('job_id')}")

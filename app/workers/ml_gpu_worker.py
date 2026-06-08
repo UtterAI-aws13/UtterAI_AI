@@ -1,5 +1,5 @@
 # ML GPU Worker
-# utterai-dev-audio-ml-queue 폴링
+# utterai-dev-gpu-inference-queue 폴링
 # 로드 모델: pyannote speaker-diarization, Whisper ASR
 # 담당 단계: 화자 분리 + STT → S3 저장 → llm-queue 발행
 import asyncio
@@ -34,11 +34,11 @@ def _load_models() -> MLGpuModels:
 def start_worker() -> None:
     sqs = boto3.client("sqs", region_name=settings.aws_region)
     models = _load_models()
-    logger.info(f"ML GPU Worker 시작. 큐: {settings.sqs_ml_gpu_queue_url}")
+    logger.info(f"ML GPU Worker 시작. 큐: {settings.sqs_gpu_inference_queue_url}")
 
     while True:
         response = sqs.receive_message(
-            QueueUrl=settings.sqs_ml_gpu_queue_url,
+            QueueUrl=settings.sqs_gpu_inference_queue_url,
             MaxNumberOfMessages=1,
             WaitTimeSeconds=20,
             VisibilityTimeout=600,
@@ -55,7 +55,7 @@ def start_worker() -> None:
             msg = MLGpuMessage(**body)
             asyncio.run(run_ml_gpu_stage(msg, models))
             sqs.delete_message(
-                QueueUrl=settings.sqs_ml_gpu_queue_url,
+                QueueUrl=settings.sqs_gpu_inference_queue_url,
                 ReceiptHandle=receipt_handle,
             )
             logger.info(f"ML GPU STAGE 완료: job_id={body.get('job_id')}")
