@@ -123,3 +123,52 @@ def generate_report(
     raise RuntimeError(
         f"리포트 생성 {MAX_RETRIES}회 시도 모두 실패. 마지막 오류: {last_error}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Bedrock + Mock pipeline (local dev / MVP)
+# ---------------------------------------------------------------------------
+
+async def run_report_pipeline(job_id: str) -> dict:
+    """Bedrock Claude 기반 리포트 생성 파이프라인 (Mock 데이터 사용).
+
+    음성 파이프라인 완성 후 아래 세 줄을 RDS 조회로 교체한다:
+        metrics    = await repositories.get_language_metrics(job_id)
+        utterances = await repositories.get_child_utterances(job_id)
+        session    = await repositories.get_session_by_job(job_id)
+    """
+    from datetime import datetime, timezone
+
+    from app.mocks.mock_metrics import MOCK_METRICS
+    from app.mocks.mock_session import MOCK_SESSION
+    from app.mocks.mock_utterances import MOCK_CHILD_UTTERANCES
+    from app.rag.retriever import retrieve_evidence
+    from app.rag.prompt_templates import build_bedrock_report_prompt
+    from app.pipelines.bedrock_client import invoke_claude
+    from app.config import settings
+
+    metrics = {**MOCK_METRICS, "job_id": job_id}
+    utterances = MOCK_CHILD_UTTERANCES
+    session = {**MOCK_SESSION, "job_id": job_id}
+
+    evidence = await retrieve_evidence(metrics=metrics, session=session)
+    print(f"[RAG] 검색된 근거: {len(evidence)}개")
+
+    prompt = build_bedrock_report_prompt(
+        metrics=metrics,
+        utterances=utterances,
+        session=session,
+        evidence=evidence,
+    )
+    report_data = invoke_claude(prompt)
+
+    report_data.update({
+        "report_id": f"report_{job_id}",
+        "job_id": job_id,
+        "session_id": session["session_id"],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "model_used": settings.bedrock_report_model_id,
+        "requires_human_review": True,
+    })
+
+    return report_data
