@@ -16,7 +16,7 @@ from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.models.llm_exaone import EXAONEWrapper
 from app.rag.vector_store import VectorStore
 from app.rag.retriever import Retriever
-from app.storage.db import engine
+from app.storage.db import get_engine
 
 
 def _load_base_models() -> tuple[KUREEmbeddingWrapper, EXAONEWrapper]:
@@ -55,7 +55,7 @@ def start_worker() -> None:
             msg = LLMMessage(**body)
 
             async def _run():
-                async with AsyncSession(engine) as session:
+                async with AsyncSession(get_engine()) as session:
                     vector_store = VectorStore(session)
                     retriever = Retriever(
                         vector_store, embedding,

@@ -21,7 +21,24 @@ class Settings(BaseSettings):
     s3_bucket_rag: str = "utterai-rag-dev"
 
     # DB - SQLAlchemy async 연결 URL (pgvector 확장 포함된 PostgreSQL)
-    database_url: str = ""
+    db_user: str = ""
+    db_password: str = ""
+    db_host: str = ""
+    db_port: int = 5432
+    db_name: str = ""
+
+    @property
+    def database_url(self):
+        from sqlalchemy import URL
+        return URL.create(
+            "postgresql+psycopg",
+            username=self.db_user,
+            password=self.db_password,
+            host=self.db_host,
+            port=self.db_port,
+            database=self.db_name,
+        )
+
 
     # Worker 타입 - Pod 환경변수로 주입 (cpu / ml-gpu / llm-gpu)
     worker_type: str = "cpu"

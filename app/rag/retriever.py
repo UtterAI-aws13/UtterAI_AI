@@ -4,6 +4,7 @@ from app.schemas import RagQuery, RagResult
 from app.rag.rag_graph import build_rag_graph, RagState
 from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.rag.vector_store import VectorStore
+from app.storage.db import get_engine
 
 
 class Retriever:
@@ -44,7 +45,7 @@ def _get_embedding_model() -> KUREEmbeddingWrapper:
 async def retrieve_evidence(metrics: dict, session: dict, top_k: int = 5) -> list[dict]:
     """Bedrock 파이프라인용 간편 검색 함수. RagEvidence 대신 dict 목록 반환."""
     from sqlalchemy.ext.asyncio import AsyncSession
-    from app.storage.db import engine
+    from app.storage.db import get_session
     from app.config import settings
 
     age_months = session.get("patient_age_months", 0)
@@ -63,7 +64,7 @@ async def retrieve_evidence(metrics: dict, session: dict, top_k: int = 5) -> lis
     model = _get_embedding_model()
     query_embedding = model.predict([question])[0]
 
-    async with AsyncSession(engine) as db_session:
+    async with AsyncSession(get_engine()) as db_session:
         vector_store = VectorStore(db_session)
         results = await vector_store.search(
             embedding=query_embedding,

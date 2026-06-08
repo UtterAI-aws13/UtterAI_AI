@@ -138,7 +138,7 @@ async def main(audio_path: str, question: str) -> None:
     rag_result: RagResult
 
     try:
-        from app.storage.db import engine
+        from app.storage.db import get_engine
         from app.models.embedding_kure import KUREEmbeddingWrapper
         from app.rag.vector_store import VectorStore
         from app.rag.retriever import Retriever
@@ -147,7 +147,7 @@ async def main(audio_path: str, question: str) -> None:
         embedding_model.load()
         _ok("KURE embedding 로드 완료")
 
-        async with AsyncSession(engine) as session:
+        async with AsyncSession(get_engine()) as session:
             vector_store = VectorStore(session)
             retriever = Retriever(
                 vector_store, embedding_model,
