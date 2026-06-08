@@ -4,7 +4,6 @@
 import asyncio
 import json
 import tempfile
-from datetime import datetime
 from pathlib import Path
 
 import boto3
@@ -17,7 +16,7 @@ from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.rag.vector_store import VectorStore
 from app.rag.ingest import ingest_document
 from app.storage import s3_client
-from app.storage.db import engine
+from app.storage.db import get_engine
 
 
 async def _handle_ingest_async(message: dict, embedding: KUREEmbeddingWrapper) -> None:
@@ -36,7 +35,7 @@ async def _handle_ingest_async(message: dict, embedding: KUREEmbeddingWrapper) -
         logger.info(f"[ingest] 다운로드: s3://{bucket}/{key}")
         s3_client.download(bucket, key, local_path)
 
-        async with AsyncSession(engine) as session:
+        async with AsyncSession(get_engine()) as session:
             vector_store = VectorStore(session)
             count = await ingest_document(local_path, metadata, embedding, vector_store)
 

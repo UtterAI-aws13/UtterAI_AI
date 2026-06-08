@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from app.config import settings
 
-engine = create_async_engine(settings.database_url)
+_engine = None
+
+def get_engine():
+    global _engine
+    if _engine is None:
+        _engine = create_async_engine(settings.database_url)
+    return _engine
 
 
 class Base(DeclarativeBase):
@@ -16,5 +22,5 @@ class Base(DeclarativeBase):
 
 async def get_session() -> AsyncSession:
     """FastAPI dependency injection용 DB 세션 생성기."""
-    async with AsyncSession(engine) as session:
+    async with AsyncSession(get_engine()) as session:
         yield session

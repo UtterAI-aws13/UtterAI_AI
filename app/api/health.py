@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.storage.db import engine
+from app.storage.db import get_engine
 
 router = APIRouter()
 
@@ -37,7 +37,7 @@ async def readiness():
     s3_ok = False
 
     try:
-        async with AsyncSession(engine) as session:
+        async with AsyncSession(get_engine()) as session:
             await session.execute(text("SELECT 1"))
         db_ok = True
     except Exception:
