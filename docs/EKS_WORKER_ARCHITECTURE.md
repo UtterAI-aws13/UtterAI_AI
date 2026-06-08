@@ -35,7 +35,7 @@ Backend API
                    └─ SQS에 분석 요청 발행
            │
            ▼
-  SQS: cpu-analysis-queue
+  SQS: audio-preprocess-queue
            │
            ▼
     CPU Worker Pod
@@ -43,16 +43,16 @@ Backend API
            │
            │ 전처리 완료 → GPU 작업 위임
            ▼
-  SQS: audio-ml-queue
+  SQS: gpu-inference-queue
            │
            ▼
     ML GPU Worker Pod
     (pyannote 화자분리, Whisper STT)
            │
            │ transcript + speaker segments → S3 저장
-           │ → llm-queue 메시지 발행
+           │ → report-analysis-queue 메시지 발행
            ▼
-  SQS: llm-queue
+  SQS: report-analysis-queue
            │
            ▼
     LLM GPU Worker Pod
@@ -241,9 +241,9 @@ T4에서 EXAONE을 돌릴 수는 있지만, LLM은 구조적으로 메모리 대
 ## 7. SQS 큐 구성
 
 ```
-utterai-cpu-analysis-queue   CPU Worker 폴링 — VAD, 정렬, 지표, RAG 검색
-utterai-audio-ml-queue       ML GPU Worker 폴링 — pyannote, Whisper
-utterai-llm-queue            LLM GPU Worker 폴링 — EXAONE 리포트 생성
+utterai-audio-preprocess-queue   CPU Worker 폴링 — VAD, 정렬, 지표, RAG 검색
+utterai-gpu-inference-queue       ML GPU Worker 폴링 — pyannote, Whisper
+utterai-report-analysis-queue            LLM GPU Worker 폴링 — EXAONE 리포트 생성
 utterai-rag-ingest-queue     CPU Worker 폴링 — 문서 chunk + 임베딩 저장 (별도)
 ```
 
@@ -267,7 +267,7 @@ SQS 메시지 수신 (job_id, session_id, s3_audio_key)
   → ffmpeg 전처리 (16kHz mono WAV 변환)
   → Silero VAD → SpeechSegment 목록
   → RDS Job 상태 = PREPROCESSING_DONE
-  → audio-ml-queue에 메시지 발행 (job_id, 전처리 음성 S3 key)
+  → gpu-inference-queue에 메시지 발행 (job_id, 전처리 음성 S3 key)
 
 [2단계 - ML GPU Worker]
 SQS 메시지 수신
@@ -275,7 +275,7 @@ SQS 메시지 수신
   → Whisper STT → ASRResult
   → S3에 중간 결과 저장 (speaker_segments.json, asr_result.json)
   → RDS Job 상태 = TRANSCRIPTION_DONE
-  → llm-queue에 메시지 발행 (job_id, 중간 결과 S3 key)
+  → report-analysis-queue에 메시지 발행 (job_id, 중간 결과 S3 key)
 
 [3단계 - LLM GPU Worker]
 SQS 메시지 수신
@@ -330,7 +330,7 @@ spec:
   triggers:
     - type: aws-sqs-queue
       metadata:
-        queueURL: https://sqs.ap-northeast-2.amazonaws.com/.../utterai-cpu-analysis-queue
+        queueURL: https://sqs.ap-northeast-2.amazonaws.com/.../utterai-audio-preprocess-queue
         queueLength: "3"
         awsRegion: ap-northeast-2
 ```
@@ -343,7 +343,7 @@ maxReplicaCount: 3
 triggers:
   - type: aws-sqs-queue
     metadata:
-      queueURL: https://sqs.ap-northeast-2.amazonaws.com/.../utterai-audio-ml-queue
+      queueURL: https://sqs.ap-northeast-2.amazonaws.com/.../utterai-gpu-inference-queue
       queueLength: "1"
 ```
 
@@ -355,7 +355,7 @@ maxReplicaCount: 2
 triggers:
   - type: aws-sqs-queue
     metadata:
-      queueURL: https://sqs.ap-northeast-2.amazonaws.com/.../utterai-llm-queue
+      queueURL: https://sqs.ap-northeast-2.amazonaws.com/.../utterai-report-analysis-queue
       queueLength: "1"
 ```
 
@@ -396,7 +396,7 @@ Worker 인스턴스 회수
 |---|---|---|
 | CPU Worker | **가능** | Job이 빠르고(수 초~1분), SQS 재시도로 복구 |
 | ML GPU Worker | **가능** | pyannote + Whisper 합산 ~3분, 인터럽션 시 처음부터 재처리하지만 SQS가 보장 |
-| LLM GPU Worker | **온디맨드 1대 기본 + 스팟 추가** | 앞 단계 결과가 S3에 저장된 뒤라 재처리 비용은 낮지만, 가용성이 낮을 때 llm-queue가 막힐 수 있음 |
+| LLM GPU Worker | **온디맨드 1대 기본 + 스팟 추가** | 앞 단계 결과가 S3에 저장된 뒤라 재처리 비용은 낮지만, 가용성이 낮을 때 report-analysis-queue가 막힐 수 있음 |
 
 ### 권장 조합
 
@@ -487,20 +487,20 @@ LLM Worker                    → g5.xlarge 온디맨드
 # CPU Worker Pod
 WORKER_TYPE=cpu
 MODEL_DEVICE=cpu
-SQS_QUEUE_URL=https://sqs.../utterai-cpu-analysis-queue
+SQS_QUEUE_URL=https://sqs.../utterai-audio-preprocess-queue
 
 # ML GPU Worker Pod
 WORKER_TYPE=ml-gpu
 MODEL_DEVICE=cuda
 ASR_DEVICE=cuda
-SQS_QUEUE_URL=https://sqs.../utterai-audio-ml-queue
+SQS_QUEUE_URL=https://sqs.../utterai-gpu-inference-queue
 HF_TOKEN=hf_xxxxxxxx
 
 # LLM GPU Worker Pod
 WORKER_TYPE=llm-gpu
 MODEL_DEVICE=cuda
 LLM_DEVICE=cuda
-SQS_QUEUE_URL=https://sqs.../utterai-llm-queue
+SQS_QUEUE_URL=https://sqs.../utterai-report-analysis-queue
 HF_TOKEN=hf_xxxxxxxx
 ```
 
