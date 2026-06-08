@@ -27,6 +27,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+cpu = [
+    "onnxruntime>=1.18.0",
+    "huggingface_hub>=0.23.0",
+    "soundfile>=0.12.1",
+    "librosa>=0.10.0",
+    "ffmpeg-python>=0.2.0",
+]
 gpu = [
     "torch>=2.3.0",
     "torchaudio>=2.3.0",
@@ -36,8 +43,6 @@ gpu = [
     "soundfile>=0.12.1",
     "librosa>=0.10.0",
     "ffmpeg-python>=0.2.0",
-    "onnxruntime>=1.18.0",
-    "huggingface_hub>=0.23.0",
 ]
 dev = [
     "pytest>=8.2.0",

@@ -8,8 +8,8 @@ on:
     paths:
       - "app/**"
       - "tests/**"
-      - "requirements*.txt"
       - "pyproject.toml"
+      - "uv.lock"
       - "Dockerfile*"
       - ".dockerignore"
       - ".github/workflows/ai-ecr-push.yaml"
