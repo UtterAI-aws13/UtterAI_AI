@@ -33,13 +33,6 @@
 - `fix: correct sqs queue url config key in jobs.py`
 - `chore: migrate from pip to uv`
 
-## Issue Rules
-
-- 작업 시작 전 이슈를 먼저 만든다.
-- 하나의 이슈는 하나의 목적에 집중한다.
-- 이슈에는 배경, 목표, 완료 조건을 반드시 적는다.
-- AI 파이프라인 관련 이슈는 영향받는 Worker(CPU/ML GPU/LLM GPU)와 SQS 큐를 명시한다.
-
 ## Pull Request Rules
 
 - PR base는 기본적으로 `dev`다.
@@ -61,5 +54,3 @@
 ## 로컬 개발 환경
 
 자세한 설치 및 실행 절차는 `README.md`의 **로컬 실행** 섹션 참고.
-
-현재 코드 흐름과 알려진 버그 목록은 `docs/CODEFLOW_DETAILED.md` 참고.
