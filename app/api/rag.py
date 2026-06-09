@@ -7,8 +7,11 @@ import boto3
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from opentelemetry import trace
 
 from app.config import settings
+from app.observability.metrics import record_sqs_publish
+from app.observability.sqs import build_message_attributes_from_current_context
 from app.schemas import RagQuery, RagResult, ChunkMetadata
 from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.rag.vector_store import VectorStore
@@ -61,13 +64,18 @@ async def query_rag(
 @router.post("/ingest")
 async def ingest_documents(request: IngestRequest):
     """문서 ingest 작업을 SQS에 발행한다. 실제 처리는 rag_ingest_worker가 담당한다."""
-    message = {
-        "bucket": request.bucket or settings.s3_bucket_rag,
-        "key": request.key,
-        "metadata": request.metadata.model_dump(),
-    }
-    _get_sqs().send_message(
-        QueueUrl=settings.sqs_rag_ingest_queue_url,
-        MessageBody=json.dumps(message),
-    )
-    return {"status": "accepted", "key": request.key}
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span("rag.ingest") as span:
+        message = {
+            "bucket": request.bucket or settings.s3_bucket_rag,
+            "key": request.key,
+            "metadata": request.metadata.model_dump(),
+        }
+        _get_sqs().send_message(
+            QueueUrl=settings.sqs_rag_ingest_queue_url,
+            MessageBody=json.dumps(message),
+            MessageAttributes=build_message_attributes_from_current_context(),
+        )
+        record_sqs_publish("rag-ingest")
+        span.set_attribute("rag.key", request.key)
+        return {"status": "accepted", "key": request.key}

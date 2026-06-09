@@ -7,8 +7,13 @@ import json
 
 import boto3
 from loguru import logger
+from opentelemetry import trace
 
 from app.config import settings
+from app.observability.otel import initialize_observability
+from app.observability.metrics import record_sqs_receive
+from app.observability.metrics import record_stage_failure
+from app.observability.sqs import extract_context_from_message_attributes
 from app.schemas import MLGpuMessage
 from app.pipelines.analysis_pipeline import run_ml_gpu_stage, MLGpuModels
 from app.models.diarization_pyannote import PyannoteWrapper
@@ -32,6 +37,7 @@ def _load_models() -> MLGpuModels:
 
 
 def start_worker() -> None:
+    initialize_observability()
     sqs = boto3.client("sqs", region_name=settings.aws_region)
     models = _load_models()
     logger.info(f"ML GPU Worker 시작. 큐: {settings.sqs_gpu_inference_queue_url}")
@@ -42,6 +48,7 @@ def start_worker() -> None:
             MaxNumberOfMessages=1,
             WaitTimeSeconds=20,
             VisibilityTimeout=600,
+            MessageAttributeNames=["All"],
         )
         messages = response.get("Messages", [])
         if not messages:
@@ -50,14 +57,19 @@ def start_worker() -> None:
         raw = messages[0]
         receipt_handle = raw["ReceiptHandle"]
         body = json.loads(raw["Body"])
+        message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
 
         try:
-            msg = MLGpuMessage(**body)
-            asyncio.run(run_ml_gpu_stage(msg, models))
-            sqs.delete_message(
-                QueueUrl=settings.sqs_gpu_inference_queue_url,
-                ReceiptHandle=receipt_handle,
-            )
-            logger.info(f"ML GPU STAGE 완료: job_id={body.get('job_id')}")
+            tracer = trace.get_tracer(__name__)
+            with tracer.start_as_current_span("worker.ml_gpu.message", context=message_context):
+                record_sqs_receive("ml-gpu-worker")
+                msg = MLGpuMessage(**body)
+                asyncio.run(run_ml_gpu_stage(msg, models))
+                sqs.delete_message(
+                    QueueUrl=settings.sqs_gpu_inference_queue_url,
+                    ReceiptHandle=receipt_handle,
+                )
+                logger.info(f"ML GPU STAGE 완료: job_id={body.get('job_id')}")
         except Exception as e:
+            record_stage_failure("ml-gpu-worker", "message")
             logger.error(f"ML GPU STAGE 실패: {e}")

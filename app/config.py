@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     worker_type: str = "cpu"
 
     # SQS
+    sqs_analysis_queue_url: str = ""
     sqs_audio_preprocess_queue_url: str = ""
     sqs_gpu_inference_queue_url: str = ""
     sqs_report_analysis_queue_url: str = ""
@@ -70,7 +71,16 @@ class Settings(BaseSettings):
     rag_top_k: int = 5               # 검색 결과 상위 k개
     rag_score_threshold: float = 0.5  # 이 점수 미만의 chunk는 근거에서 제외
 
-    model_config = {"env_file": ".env"}
+    # OpenTelemetry
+    otel_service_name: str = "ai"
+    otel_exporter_otlp_endpoint: str = "http://localhost:4318"
+    otel_exporter_otlp_protocol: str = "http/protobuf"
+    otel_metrics_exporter: str = "otlp"
+    otel_traces_exporter: str = "otlp"
+    otel_logs_exporter: str = "none"
+    otel_resource_attributes: str = "deployment.environment=local,team=utterai"
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()
