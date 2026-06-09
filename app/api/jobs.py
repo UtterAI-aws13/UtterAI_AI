@@ -6,8 +6,11 @@ from datetime import datetime, timezone
 
 import boto3
 from fastapi import APIRouter, HTTPException
+from opentelemetry import trace
 
 from app.config import settings
+from app.observability.metrics import record_job_created, record_sqs_publish
+from app.observability.sqs import build_message_attributes_from_current_context
 from app.schemas import (
     JobCreateRequest, JobCreateResponse, JobStatusResponse,
     JobStatus, JobMessage, AudioInput, JobOptions,
@@ -33,23 +36,30 @@ async def create_job(request: JobCreateRequest):
     Worker가 SQS 메시지를 수신해 비동기로 분석을 처리하므로
     API는 job_id와 PENDING 상태만 즉시 반환한다.
     """
-    job_id = generate_job_id()
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span("ai_api.create_job") as span:
+        job_id = generate_job_id()
 
-    message = JobMessage(
-        job_id=job_id,
-        session_id=request.session_id,
-        user_id="system",  # TODO: 인증 헤더에서 user_id 추출
-        audio=AudioInput(bucket=settings.s3_bucket_audio, key=request.audio_s3_key),
-        options=request.options,
-        requested_at=datetime.now(timezone.utc),
-    )
+        message = JobMessage(
+            job_id=job_id,
+            session_id=request.session_id,
+            user_id="system",  # TODO: 인증 헤더에서 user_id 추출
+            audio=AudioInput(bucket=settings.s3_bucket_audio, key=request.audio_s3_key),
+            options=request.options,
+            requested_at=datetime.now(timezone.utc),
+        )
 
-    _get_sqs().send_message(
-        QueueUrl=settings.sqs_analysis_queue_url,
-        MessageBody=message.model_dump_json(),
-    )
+        _get_sqs().send_message(
+            QueueUrl=settings.sqs_analysis_queue_url,
+            MessageBody=message.model_dump_json(),
+            MessageAttributes=build_message_attributes_from_current_context(),
+        )
 
-    return JobCreateResponse(job_id=job_id, status=JobStatus.PENDING)
+        record_job_created()
+        record_sqs_publish("analysis-request")
+        span.set_attribute("job.id", job_id)
+        span.set_attribute("audio.key", request.audio_s3_key)
+        return JobCreateResponse(job_id=job_id, status=JobStatus.PENDING)
 
 
 @router.get("/{job_id}", response_model=JobStatusResponse)

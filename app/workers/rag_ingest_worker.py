@@ -8,9 +8,14 @@ from pathlib import Path
 
 import boto3
 from loguru import logger
+from opentelemetry import trace
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.observability.otel import initialize_observability
+from app.observability.metrics import record_sqs_receive
+from app.observability.metrics import record_stage_failure
+from app.observability.sqs import extract_context_from_message_attributes
 from app.schemas import ChunkMetadata
 from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.rag.vector_store import VectorStore
@@ -44,6 +49,7 @@ async def _handle_ingest_async(message: dict, embedding: KUREEmbeddingWrapper) -
 
 def start_worker() -> None:
     """SQS 큐를 폴링하며 ingest 메시지를 처리하는 루프."""
+    initialize_observability()
     sqs = boto3.client("sqs", region_name=settings.aws_region)
 
     embedding = KUREEmbeddingWrapper(settings.embedding_model_name)
@@ -58,6 +64,7 @@ def start_worker() -> None:
             MaxNumberOfMessages=1,
             WaitTimeSeconds=20,
             VisibilityTimeout=300,
+            MessageAttributeNames=["All"],
         )
 
         messages = response.get("Messages", [])
@@ -67,12 +74,17 @@ def start_worker() -> None:
         raw = messages[0]
         receipt_handle = raw["ReceiptHandle"]
         body = json.loads(raw["Body"])
+        message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
 
         try:
-            asyncio.run(_handle_ingest_async(body, embedding))
-            sqs.delete_message(
-                QueueUrl=settings.sqs_rag_ingest_queue_url,
-                ReceiptHandle=receipt_handle,
-            )
+            tracer = trace.get_tracer(__name__)
+            with tracer.start_as_current_span("worker.rag.message", context=message_context):
+                record_sqs_receive("rag-ingest-worker")
+                asyncio.run(_handle_ingest_async(body, embedding))
+                sqs.delete_message(
+                    QueueUrl=settings.sqs_rag_ingest_queue_url,
+                    ReceiptHandle=receipt_handle,
+                )
         except Exception as e:
+            record_stage_failure("rag-ingest-worker", "message")
             logger.error(f"[ingest] 처리 실패: {e}")
