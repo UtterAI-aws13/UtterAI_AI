@@ -10,21 +10,21 @@ class LanguageMetrics(BaseModel):
     - ntw: Number of Total Words - 총 단어(토큰) 수
     - ndw: Number of Different Words - 중복 제거 후 서로 다른 단어 수
     - ttr: Type Token Ratio (= NDW / NTW) - 발화량이 늘수록 낮아지므로 단독 판단 금지
-    - average_response_latency_sec: THERAPIST 발화 종료 → CHILD 발화 시작까지의 평균 간격
+    - avg_response_latency_sec: SLP 발화 종료 → PATIENT 발화 시작까지의 평균 간격
     """
     session_id: str
-    target_speaker: str                              # 지표 계산 대상 화자 (예: CHILD, SPEAKER_00)
+    target_speaker: str                              # 지표 계산 대상 화자 (예: PATIENT, SPEAKER_00)
     total_utterances: int
     ntw: int
     ndw: int
     ttr: float
     mlu_morpheme: float
-    average_response_latency_sec: float | None = None  # CHILD/THERAPIST 쌍이 없으면 None
+    avg_response_latency_sec: float | None = None    # PATIENT/SLP 쌍이 없으면 None
     warnings: list[str] = []                         # 예: speaker_role_auto_detected
 
 
 class SpeakerMetrics(BaseModel):
     """화자 식별 정보와 해당 화자의 언어 지표를 함께 묶은 컨테이너."""
     speaker_id: str      # pyannote 원본 레이블
-    speaker_role: str    # 역할 (CHILD / THERAPIST / UNKNOWN 등)
+    speaker_role: str    # 역할 (PATIENT / SLP / UNKNOWN 등)
     metrics: LanguageMetrics

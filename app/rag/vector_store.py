@@ -1,7 +1,11 @@
 # pgvector 기반 벡터 저장소
 # rag_chunks 테이블에 청크 텍스트와 KURE-v1 임베딩을 저장하고
 # cosine similarity 기반 검색을 제공한다
-from sqlalchemy import Column, String, Text, JSON, select
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import Column, String, Text, DateTime, func, select
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from pgvector.sqlalchemy import Vector
 
@@ -10,13 +14,21 @@ from app.schemas import RagChunk, RagEvidence
 
 
 class RagChunkORM(Base):
+    """DB_SCHEMA.md AI DB 섹션 rag_chunks 테이블 정의."""
+
     __tablename__ = "rag_chunks"
 
-    chunk_id = Column(String, primary_key=True)
-    document_id = Column(String, index=True, nullable=False)
-    content = Column(Text, nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_type = Column(String(100), nullable=False)          # 예: clinical_guideline
+    source_ref = Column(Text, nullable=True)                   # 원문 참조 경로 (document_id)
+    chunk_text = Column(Text, nullable=False)                  # 청크 원문
     embedding = Column(Vector(1024), nullable=False)
-    metadata_json = Column(JSON, nullable=False, default=dict)
+    metadata_json = Column(JSONB, nullable=True)               # chunk_id, title, age_group 등
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
 
 class VectorStore:
@@ -24,14 +36,24 @@ class VectorStore:
         self.session = session
 
     async def upsert(self, chunks: list[RagChunk], embeddings: list[list[float]]) -> None:
-        """청크와 임베딩을 배치로 저장한다. 동일 chunk_id가 있으면 덮어쓴다."""
+        """청크와 임베딩을 배치로 저장한다. 동일 chunk_id(metadata 내)가 있으면 덮어쓴다."""
         for chunk, emb in zip(chunks, embeddings):
+            meta = chunk.metadata.model_dump()
+            # chunk_id로 기존 행을 찾아 id를 재사용해 upsert
+            existing = await self.session.execute(
+                select(RagChunkORM).where(
+                    RagChunkORM.metadata_json["chunk_id"].as_string() == chunk.chunk_id
+                )
+            )
+            existing_row = existing.scalar_one_or_none()
+
             obj = RagChunkORM(
-                chunk_id=chunk.chunk_id,
-                document_id=chunk.document_id,
-                content=chunk.content,
+                id=existing_row.id if existing_row else uuid.uuid4(),
+                source_type=chunk.metadata.source_type,
+                source_ref=chunk.document_id,
+                chunk_text=chunk.content,
                 embedding=emb,
-                metadata_json=chunk.metadata.model_dump(),
+                metadata_json={**meta, "chunk_id": chunk.chunk_id},
             )
             await self.session.merge(obj)
         await self.session.commit()
@@ -72,12 +94,12 @@ class VectorStore:
                 continue
 
             evidence.append(RagEvidence(
-                document_id=chunk_orm.document_id,
-                chunk_id=chunk_orm.chunk_id,
+                document_id=chunk_orm.source_ref or "",
+                chunk_id=meta.get("chunk_id", str(chunk_orm.id)),
                 title=meta.get("title", ""),
-                source_type=meta.get("source_type", ""),
+                source_type=chunk_orm.source_type,
                 score=round(score, 4),
-                text=chunk_orm.content,
+                text=chunk_orm.chunk_text,
                 metadata=meta,
             ))
 
