@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     s3_bucket_report: str = "utterai-report-dev"
     s3_bucket_rag: str = "utterai-rag-dev"
 
-    # DB - SQLAlchemy async 연결 URL (pgvector 확장 포함된 PostgreSQL)
+    # AI DB - pgvector 확장 포함된 PostgreSQL (RAG 벡터 검색용)
     db_user: str = ""
     db_password: str = ""
     db_host: str = ""
@@ -37,6 +37,25 @@ class Settings(BaseSettings):
             host=self.db_host,
             port=self.db_port,
             database=self.db_name,
+        )
+
+    # BE RDS - analysis_jobs / transcripts / transcript_segments 테이블 (ML GPU Worker만 사용)
+    be_db_user: str = ""
+    be_db_password: str = ""
+    be_db_host: str = ""
+    be_db_port: int = 5432
+    be_db_name: str = ""
+
+    @property
+    def be_database_url(self):
+        from sqlalchemy import URL
+        return URL.create(
+            "postgresql+psycopg",
+            username=self.be_db_user,
+            password=self.be_db_password,
+            host=self.be_db_host,
+            port=self.be_db_port,
+            database=self.be_db_name,
         )
 
 

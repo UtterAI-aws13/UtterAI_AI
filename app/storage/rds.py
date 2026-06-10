@@ -1,4 +1,7 @@
-"""RDS write helpers for transcript draft and analysis job status."""
+"""RDS write helpers for transcript draft and analysis job status.
+
+BE RDS에 직접 쓰는 헬퍼. AI pgvector DB(db.py)와 별개의 엔진을 사용한다.
+"""
 
 from __future__ import annotations
 
@@ -6,9 +9,19 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.schemas.transcript import Utterance
+
+_be_engine = None
+
+
+def get_be_engine():
+    global _be_engine
+    if _be_engine is None:
+        from app.config import settings
+        _be_engine = create_async_engine(settings.be_database_url)
+    return _be_engine
 
 _TERMINAL_STATUSES = {"COMPLETED", "FAILED"}
 

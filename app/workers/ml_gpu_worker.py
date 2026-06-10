@@ -19,7 +19,7 @@ from app.schemas import MLGpuMessage
 from app.pipelines.analysis_pipeline import run_ml_gpu_stage, MLGpuModels
 from app.models.diarization_pyannote import PyannoteWrapper
 from app.models.asr_whisper import WhisperASRWrapper
-from app.storage.db import get_engine
+from app.storage.rds import get_be_engine
 
 
 def _load_models() -> MLGpuModels:
@@ -68,7 +68,7 @@ def start_worker() -> None:
                 msg = MLGpuMessage(**body)
 
                 async def _run():
-                    async with AsyncSession(get_engine()) as session:
+                    async with AsyncSession(get_be_engine()) as session:
                         await run_ml_gpu_stage(msg, models, session)
 
                 asyncio.run(_run())
