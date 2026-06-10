@@ -49,6 +49,7 @@ class JobMessage(BaseModel):
     """SQS 메시지 또는 Worker 내부 Job 메시지 스키마."""
     job_id: str
     session_id: str
+    audio_file_id: str
     user_id: str
     audio: AudioInput
     options: JobOptions = JobOptions()
@@ -92,6 +93,7 @@ class MLGpuMessage(BaseModel):
     """cpu-worker → audio-ml-queue 발행 메시지. ML GPU Worker가 수신한다."""
     job_id: str
     session_id: str
+    audio_file_id: str
     wav_s3_key: str       # 전처리된 WAV S3 경로
     vad_s3_key: str       # VAD 결과 JSON S3 경로
     options: JobOptions = JobOptions()
@@ -101,6 +103,7 @@ class LLMMessage(BaseModel):
     """ml-gpu-worker → llm-queue 발행 메시지. LLM GPU Worker가 수신한다."""
     job_id: str
     session_id: str
+    audio_file_id: str
     vad_s3_key: str       # VAD 결과 JSON S3 경로
     speaker_s3_key: str   # 화자 분리 결과 JSON S3 경로
     asr_s3_key: str       # ASR 결과 JSON S3 경로

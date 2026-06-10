@@ -30,6 +30,7 @@ from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.models.llm_exaone import EXAONEWrapper
 from app.rag.retriever import Retriever
 from app.storage import s3_client
+from app.storage.rds import save_transcript_draft, update_analysis_job_status
 from app.config import settings
 from app.observability.metrics import record_sqs_publish, record_stage_duration
 from app.observability.sqs import build_message_attributes_from_current_context
@@ -121,6 +122,7 @@ async def run_cpu_stage(message: JobMessage, models: CPUModels) -> None:
         ml_msg = MLGpuMessage(
             job_id=job_id,
             session_id=session_id,
+            audio_file_id=message.audio_file_id,
             wav_s3_key=wav_key,
             vad_s3_key=vad_key,
             options=message.options,
@@ -140,72 +142,99 @@ async def run_cpu_stage(message: JobMessage, models: CPUModels) -> None:
 # Stage 2 — ML GPU Worker
 # ---------------------------------------------------------------------------
 
-async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels) -> None:
-    """pyannote 화자 분리 + Whisper STT 실행 후 S3에 저장하고 llm-queue에 발행한다."""
+async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> None:
+    """STT + 화자분리 + alignment 실행 후 transcript draft를 S3/RDS에 저장하고 job status를 업데이트한다."""
     tracer = trace.get_tracer(__name__)
     job_id = message.job_id
     session_id = message.session_id
     with tracer.start_as_current_span("worker.ml_gpu.pipeline") as span:
         span.set_attribute("job.id", job_id)
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp = Path(tmp_dir)
-            wav_path = str(tmp / "processed.wav")
+        try:
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                tmp = Path(tmp_dir)
+                wav_path = str(tmp / "processed.wav")
 
-            logger.info(f"[{job_id}] ML GPU STAGE: DOWNLOADING WAV")
-            download_start = perf_counter()
-            with tracer.start_as_current_span("worker.ml_gpu.download"):
-                s3_client.download(settings.s3_bucket_audio, message.wav_s3_key, wav_path)
-            record_stage_duration("ml-gpu-worker", "download", perf_counter() - download_start)
+                logger.info(f"[{job_id}] ML GPU STAGE: DOWNLOADING WAV")
+                download_start = perf_counter()
+                with tracer.start_as_current_span("worker.ml_gpu.download"):
+                    s3_client.download(settings.s3_bucket_audio, message.wav_s3_key, wav_path)
+                record_stage_duration("ml-gpu-worker", "download", perf_counter() - download_start)
 
-            if message.options.enable_diarization:
-                logger.info(f"[{job_id}] ML GPU STAGE: DIARIZATION")
-                diarize_start = perf_counter()
-                with tracer.start_as_current_span("worker.ml_gpu.diarization"):
-                    speaker_segments = models.diarize.predict(wav_path)
-                record_stage_duration("ml-gpu-worker", "diarization", perf_counter() - diarize_start)
-                logger.info(f"[{job_id}] speaker_segments={len(speaker_segments)}")
-            else:
-                speaker_segments = []
+                if message.options.enable_diarization:
+                    logger.info(f"[{job_id}] ML GPU STAGE: DIARIZATION")
+                    diarize_start = perf_counter()
+                    with tracer.start_as_current_span("worker.ml_gpu.diarization"):
+                        speaker_segments = models.diarize.predict(wav_path)
+                    record_stage_duration("ml-gpu-worker", "diarization", perf_counter() - diarize_start)
+                    logger.info(f"[{job_id}] speaker_segments={len(speaker_segments)}")
+                else:
+                    speaker_segments = []
 
-            logger.info(f"[{job_id}] ML GPU STAGE: ASR")
-            asr_start = perf_counter()
-            with tracer.start_as_current_span("worker.ml_gpu.asr"):
-                asr_result = models.asr.predict(wav_path)
-            record_stage_duration("ml-gpu-worker", "asr", perf_counter() - asr_start)
-            logger.info(f"[{job_id}] asr_segments={len(asr_result.segments)}")
+                logger.info(f"[{job_id}] ML GPU STAGE: ASR")
+                asr_start = perf_counter()
+                with tracer.start_as_current_span("worker.ml_gpu.asr"):
+                    asr_result = models.asr.predict(wav_path)
+                record_stage_duration("ml-gpu-worker", "asr", perf_counter() - asr_start)
+                logger.info(f"[{job_id}] asr_segments={len(asr_result.segments)}")
 
-            speaker_key = f"intermediate/{session_id}/{job_id}/speaker_segments.json"
-            asr_key = f"intermediate/{session_id}/{job_id}/asr_result.json"
+                # step 12: raw artifact → S3
+                speaker_key = f"intermediate/{session_id}/{job_id}/speaker_segments.json"
+                asr_key = f"intermediate/{session_id}/{job_id}/asr_result.json"
+                persist_start = perf_counter()
+                with tracer.start_as_current_span("worker.ml_gpu.persist_intermediate"):
+                    speaker_path = str(tmp / "speaker_segments.json")
+                    Path(speaker_path).write_text(
+                        json.dumps([s.model_dump() for s in speaker_segments]), encoding="utf-8"
+                    )
+                    s3_client.upload(speaker_path, settings.s3_bucket_audio, speaker_key)
 
-            persist_start = perf_counter()
-            with tracer.start_as_current_span("worker.ml_gpu.persist_intermediate"):
-                speaker_path = str(tmp / "speaker_segments.json")
-                Path(speaker_path).write_text(
-                    json.dumps([s.model_dump() for s in speaker_segments]), encoding="utf-8"
+                    asr_path = str(tmp / "asr_result.json")
+                    Path(asr_path).write_text(asr_result.model_dump_json(), encoding="utf-8")
+                    s3_client.upload(asr_path, settings.s3_bucket_audio, asr_key)
+                record_stage_duration("ml-gpu-worker", "persist", perf_counter() - persist_start)
+
+                # VAD 결과 로드 (CPU stage에서 저장)
+                vad_path = str(tmp / "vad_segments.json")
+                s3_client.download(settings.s3_bucket_audio, message.vad_s3_key, vad_path)
+                speech_segments = [
+                    SpeechSegment(**s) for s in json.loads(Path(vad_path).read_text())
+                ]
+
+                # alignment
+                logger.info(f"[{job_id}] ML GPU STAGE: ALIGNING")
+                align_start = perf_counter()
+                with tracer.start_as_current_span("worker.ml_gpu.align"):
+                    utterances = align_segments(speech_segments, speaker_segments, asr_result.segments)
+                record_stage_duration("ml-gpu-worker", "align", perf_counter() - align_start)
+                logger.info(f"[{job_id}] utterances={len(utterances)}")
+
+                # step 13: transcript draft → S3 + RDS
+                logger.info(f"[{job_id}] ML GPU STAGE: SAVING TRANSCRIPT DRAFT")
+                draft_key = f"transcript-drafts/{session_id}/{job_id}/transcript_draft.json"
+                draft_path = str(tmp / "transcript_draft.json")
+                Path(draft_path).write_text(
+                    json.dumps([u.model_dump() for u in utterances], ensure_ascii=False, indent=2),
+                    encoding="utf-8",
                 )
-                s3_client.upload(speaker_path, settings.s3_bucket_audio, speaker_key)
+                s3_client.upload(draft_path, settings.s3_bucket_report, draft_key)
+                await save_transcript_draft(
+                    db, job_id, session_id, message.audio_file_id, draft_key, utterances
+                )
+                logger.info(f"[{job_id}] transcript draft 저장 완료: {draft_key}")
 
-                asr_path = str(tmp / "asr_result.json")
-                Path(asr_path).write_text(asr_result.model_dump_json(), encoding="utf-8")
-                s3_client.upload(asr_path, settings.s3_bucket_audio, asr_key)
-            record_stage_duration("ml-gpu-worker", "persist", perf_counter() - persist_start)
+            # step 14: analysis_jobs.status → COMPLETED
+            await update_analysis_job_status(db, job_id, "COMPLETED", pipeline_stage="COMPLETED")
+            logger.info(f"[{job_id}] ML GPU STAGE: DONE")
 
-        llm_msg = LLMMessage(
-            job_id=job_id,
-            session_id=session_id,
-            vad_s3_key=message.vad_s3_key,
-            speaker_s3_key=speaker_key,
-            asr_s3_key=asr_key,
-            options=message.options,
-        )
-        with tracer.start_as_current_span("worker.ml_gpu.publish_llm") as child_span:
-            child_span.set_attribute("queue.name", settings.sqs_report_analysis_queue_url)
-            _send_sqs(
-                settings.sqs_report_analysis_queue_url,
-                llm_msg.model_dump_json(),
-                "ml-to-llm",
+        except Exception as exc:
+            logger.error(f"[{job_id}] ML GPU STAGE 실패: {exc}")
+            await update_analysis_job_status(
+                db, job_id, "FAILED",
+                pipeline_stage="ML_GPU",
+                error_code="ML_GPU_STAGE_FAILED",
+                error_message=str(exc),
             )
-        logger.info(f"[{job_id}] ML GPU STAGE: DONE → llm-queue 발행")
+            raise
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +242,7 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels) -> None
 # ---------------------------------------------------------------------------
 
 async def run_llm_gpu_stage(message: "LLMMessage", models: LLMModels) -> None:
-    """정렬 + 지표 + RAG + EXAONE 실행 후 리포트를 S3에 저장한다."""
+    """지표 + RAG + EXAONE 실행 후 리포트를 S3에 저장한다."""
     tracer = trace.get_tracer(__name__)
     job_id = message.job_id
     session_id = message.session_id
