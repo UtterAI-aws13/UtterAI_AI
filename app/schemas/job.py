@@ -21,6 +21,7 @@ class JobStatus(str, Enum):
     COMPLETED = "COMPLETED"                   # 전체 파이프라인 완료
     FAILED = "FAILED"                         # 오류로 중단
     RETRYING = "RETRYING"                     # 재시도 중
+    CANCELLED = "CANCELLED"                   # BE에서 취소 요청됨
 
 
 class TargetSpeakerPolicy(str, Enum):
@@ -43,6 +44,7 @@ class JobOptions(BaseModel):
     enable_diarization: bool = True           # False면 화자 분리 생략, 전체를 UNKNOWN 처리
     enable_rag: bool = True                   # False면 RAG 검색 및 리포트 생성 생략
     target_speaker_policy: TargetSpeakerPolicy = TargetSpeakerPolicy.AUTO_DETECT_CHILD
+    template_id: str | None = None            # 리포트 생성에 사용할 템플릿 ID (BE에서 전달)
 
 
 class JobMessage(BaseModel):
