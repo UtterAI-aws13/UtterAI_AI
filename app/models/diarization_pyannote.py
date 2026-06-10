@@ -9,7 +9,7 @@ class PyannoteWrapper(BaseModelWrapper):
     """pyannote.audio 화자 분리 파이프라인 래퍼.
 
     출력은 SPEAKER_00, SPEAKER_01 형태의 익명 레이블이다.
-    CHILD / THERAPIST 역할 매핑은 alignment 이후 별도로 처리한다.
+    PATIENT / SLP 역할 매핑은 alignment 이후 별도로 처리한다.
     """
     def __init__(self, model_name: str, device: str = "cuda", hf_token: str = ""):
         self.model_name = model_name

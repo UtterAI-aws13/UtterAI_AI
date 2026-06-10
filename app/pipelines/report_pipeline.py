@@ -141,14 +141,14 @@ async def run_report_pipeline(job_id: str) -> dict:
 
     from app.mocks.mock_metrics import MOCK_METRICS
     from app.mocks.mock_session import MOCK_SESSION
-    from app.mocks.mock_utterances import MOCK_CHILD_UTTERANCES
+    from app.mocks.mock_utterances import MOCK_PATIENT_UTTERANCES
     from app.rag.retriever import retrieve_evidence
     from app.rag.prompt_templates import build_bedrock_report_prompt
     from app.pipelines.bedrock_client import invoke_claude
     from app.config import settings
 
     metrics = {**MOCK_METRICS, "job_id": job_id}
-    utterances = MOCK_CHILD_UTTERANCES
+    utterances = MOCK_PATIENT_UTTERANCES
     session = {**MOCK_SESSION, "job_id": job_id}
 
     evidence = await retrieve_evidence(metrics=metrics, session=session)

@@ -52,7 +52,7 @@ async def retrieve_evidence(metrics: dict, session: dict, top_k: int = 5) -> lis
     mlu = metrics.get("mlu_morpheme", 0)
     ttr = metrics.get("ttr", 0)
     ndw = metrics.get("ndw", 0)
-    latency = metrics.get("average_response_latency_sec", 0)
+    latency = metrics.get("avg_response_latency_sec", 0)
 
     question = (
         f"만 {age_months // 12}세 아동 언어치료 세션. "

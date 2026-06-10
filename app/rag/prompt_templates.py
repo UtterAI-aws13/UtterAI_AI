@@ -41,7 +41,7 @@ def build_bedrock_report_prompt(
         f"- NTW: {metrics.get('ntw', 'N/A')}\n"
         f"- NDW: {metrics.get('ndw', 'N/A')}\n"
         f"- TTR: {metrics.get('ttr', 'N/A')}\n"
-        f"- 평균 반응 지연: {metrics.get('average_response_latency_sec', 'N/A')}초\n"
+        f"- 평균 반응 지연: {metrics.get('avg_response_latency_sec', 'N/A')}초\n"
         f"- 최대 반응 지연: {metrics.get('max_response_latency_sec', 'N/A')}초\n"
         f"- 총 발화 수 (아동): {metrics.get('total_utterances', 'N/A')}"
     )
