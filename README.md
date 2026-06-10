@@ -16,13 +16,20 @@
 
 ```
 원본 음성
-  → [CPU Worker]   전처리(ffmpeg) + VAD(Silero)
-  → [ML GPU Worker] 화자 분리(pyannote) + STT(Whisper)
-  → [LLM GPU Worker] 정렬 + 지표 계산 + RAG 검색 + SOAP Note 생성(Bedrock)
-  → S3 결과 저장
+  → [CPU Worker]      전처리(ffmpeg) + VAD(Silero) → S3(WAV, VAD JSON)
+  → [ML GPU Worker]   화자 분리(pyannote) + STT(Whisper) + 정렬(alignment)
+                      → transcript draft S3 저장 + RDS(transcripts, transcript_segments) 저장
+                      → analysis_jobs.status = COMPLETED
+  → [LLM GPU Worker]  지표 계산 + RAG 검색 + SOAP Note 생성(Bedrock/EXAONE)
+                      → S3(report JSON)
 ```
 
 각 단계는 SQS 큐로 연결된 독립 Worker Pod로 실행됩니다.
+
+> **단계별 책임 요약**
+> - CPU Worker: 전처리 + VAD → `SQS GPU Inference Queue` 발행
+> - ML GPU Worker: 화자분리 + ASR + **alignment + transcript draft 저장(S3+RDS)** → `analysis_jobs.status=COMPLETED`
+> - LLM GPU Worker: 지표 계산 + RAG + 리포트 생성 → S3 저장 (별도 흐름, transcript와 독립)
 
 ## AI 모델 구성
 
@@ -117,10 +124,12 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 |---|---|---|
 | `GET` | `/health/live` | 프로세스 생존 확인 |
 | `GET` | `/health/ready` | DB + S3 연결 확인 |
-| `POST` | `/internal/ai/analysis-jobs` | 분석 Job 수신 (BE → AI, 내부 전용) |
+| `POST` | `/internal/ai/analysis-jobs` | 분석 Job 수신 (BE → AI, 내부 전용 / dev 환경) |
 | `GET` | `/internal/ai/analysis-jobs/{job_id}` | Job 상태 조회 (미구현, 항상 404) |
 | `POST` | `/ai/rag/ingest` | RAG 문서 ingest 요청 (SQS 발행) |
 | `POST` | `/ai/rag/query` | RAG 검색 테스트 |
+
+> 운영 환경에서는 BE → SQS → CPU Worker 경로로 Job이 진입한다. `/internal/ai/analysis-jobs` 엔드포인트는 BE가 HTTP로 직접 호출하던 구 방식의 잔재로, 현재는 dev/test tooling 용도로만 유지된다.
 
 
 ## 배포 구조
