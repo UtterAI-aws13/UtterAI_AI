@@ -79,7 +79,8 @@ app/
 | `AWS_REGION` | AWS 리전 |
 | `S3_BUCKET_AUDIO` | 오디오 버킷 |
 | `S3_BUCKET_REPORT` | 결과 리포트 버킷 |
-| `DB_*` | PostgreSQL(pgvector) 접속 정보 |
+| `DB_*` | AI PostgreSQL(pgvector) 접속 정보 |
+| `BE_DB_*` | BE RDS 접속 정보 (ML GPU Worker 전용 — `transcripts` / `analysis_jobs` 쓰기) |
 | `SQS_AUDIO_PREPROCESS_QUEUE_URL` | CPU Worker 입력 큐 |
 | `SQS_GPU_INFERENCE_QUEUE_URL` | ML GPU Worker 입력 큐 |
 | `SQS_REPORT_ANALYSIS_QUEUE_URL` | LLM GPU Worker 입력 큐 |
@@ -109,10 +110,35 @@ python scripts/create_tables.py  # 최초 1회
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
+### SQS Worker 로컬 실행
+
+실제 SQS/S3/RDS와 연동해 워커를 로컬에서 구동하려면:
+
+```bash
+# 터미널 1 — CPU Worker (VAD + 전처리)
+python scripts/run_cpu_worker.py
+
+# 터미널 2 — ML GPU Worker (화자분리 + STT + transcript 저장)
+python scripts/run_ml_gpu_worker.py
+```
+
+`.env`에 아래 항목이 채워져 있어야 한다.
+
+| 항목 | 비고 |
+|---|---|
+| `HF_TOKEN` | pyannote gated model 접근 필수 |
+| `SQS_AUDIO_PREPROCESS_QUEUE_URL` | CPU Worker 입력 큐 |
+| `SQS_GPU_INFERENCE_QUEUE_URL` | ML GPU Worker 입력 큐 |
+| `BE_DB_*` | BE RDS 접속 정보 (transcript 저장용) |
+| `ASR_DEVICE=cpu` | GPU 없는 로컬 환경에서 필수 |
+| `DIARIZATION_DEVICE=cpu` | GPU 없는 로컬 환경에서 필수 |
+
 ### 로컬 파이프라인 테스트 스크립트
 
 | 스크립트 | 설명 |
 |---|---|
+| `scripts/run_cpu_worker.py` | CPU Worker 단독 실행 (SQS 폴링) |
+| `scripts/run_ml_gpu_worker.py` | ML GPU Worker 단독 실행 (SQS 폴링) |
 | `scripts/dev_run.py --audio file.wav` | SQS/S3 없이 전체 파이프라인 로컬 실행 |
 | `scripts/test_models.py --audio file.wav` | VAD + 화자분리 + ASR 단독 테스트 |
 | `scripts/test_pipeline.py` | Mock 데이터로 Bedrock SOAP Note 생성 테스트 |
