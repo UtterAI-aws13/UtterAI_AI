@@ -104,6 +104,55 @@ async def get_transcript_segments(
     return [dict(row._mapping) for row in result]
 
 
+async def get_session_context(
+    db: AsyncSession,
+    session_id: str,
+) -> dict:
+    """sessions + patients 조인으로 리포트 생성에 필요한 세션 컨텍스트를 반환한다.
+
+    반환 키:
+        session_date       : date 객체 (없으면 None)
+        session_number     : 해당 환자의 누적 세션 순번 (1-based)
+        patient_age_months : 세션일 기준 나이(개월 수, birth_date 없으면 0)
+    """
+    row = await db.execute(
+        text("""
+            SELECT
+                s.session_date,
+                p.birth_date,
+                (
+                    SELECT COUNT(*)
+                    FROM sessions s2
+                    WHERE s2.patient_ref_id = s.patient_ref_id
+                      AND s2.created_at <= s.created_at
+                ) AS session_number
+            FROM sessions s
+            JOIN patient_refs pr ON s.patient_ref_id = pr.id
+            LEFT JOIN patients p ON p.patient_ref_id = pr.id
+            WHERE s.id = CAST(:session_id AS uuid)
+        """),
+        {"session_id": session_id},
+    )
+    record = row.mappings().first()
+    if record is None:
+        return {"session_date": None, "session_number": 1, "patient_age_months": 0}
+
+    session_date = record["session_date"]
+    birth_date = record["birth_date"]
+    session_number = int(record["session_number"] or 1)
+
+    patient_age_months = 0
+    if birth_date and session_date:
+        months = (session_date.year - birth_date.year) * 12 + (session_date.month - birth_date.month)
+        patient_age_months = max(0, months)
+
+    return {
+        "session_date": str(session_date) if session_date else None,
+        "session_number": session_number,
+        "patient_age_months": patient_age_months,
+    }
+
+
 async def save_report(
     db: AsyncSession,
     job_id: str,
