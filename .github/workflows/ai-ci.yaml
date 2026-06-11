@@ -31,7 +31,7 @@ permissions:
   contents: read
 
 jobs:
-  ai-check:
+  ai-test:
     runs-on: ubuntu-latest
     env:
       # CI에서는 실제 DB에 접속하지 않고 app import 가능 여부만 확인합니다.
@@ -55,22 +55,24 @@ jobs:
       - name: Run tests
         run: uv run pytest
 
-      - name: Free disk space before Docker build
-        run: |
-          # GitHub-hosted runner에는 CI에 필요 없는 SDK/캐시가 기본으로 많이 들어있습니다.
-          # GPU Docker image는 CUDA/cuDNN layer가 커서 빌드 전에 여유 공간을 확보합니다.
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          docker system prune -af
-          df -h
+  docker-build-cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Docker build CPU image check
         run: docker build -f Dockerfile.cpu -t utterai-ai-cpu:ci .
 
+  docker-build-gpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Free disk space before GPU Docker build
         run: |
-          # CPU image 검증 후 남은 image/cache를 제거해 GPU image 빌드 공간을 확보합니다.
-          docker image rm utterai-ai-cpu:ci || true
-          docker builder prune -af
+          # GitHub-hosted runner에는 CI에 필요 없는 SDK/캐시가 기본으로 많이 들어있습니다.
+          # GPU Docker image는 CUDA/cuDNN layer가 커서 빌드 전에 여유 공간을 확보합니다.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           docker system prune -af
           df -h
 
