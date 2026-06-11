@@ -92,7 +92,7 @@ class JobFailureInfo(BaseModel):
 
 
 class MLGpuMessage(BaseModel):
-    """cpu-worker → audio-ml-queue 발행 메시지. ML GPU Worker가 수신한다."""
+    """cpu-worker → gpu-inference-queue 발행 메시지. ML GPU Worker가 수신한다."""
     job_id: str
     session_id: str
     audio_file_id: str
@@ -102,7 +102,7 @@ class MLGpuMessage(BaseModel):
 
 
 class LLMMessage(BaseModel):
-    """ml-gpu-worker → llm-queue 발행 메시지. LLM GPU Worker가 수신한다."""
+    """ml-gpu-worker → gpu-inference-queue 완료 후 BE finalize 경유로 report-analysis-queue에 전달되는 메시지 스키마."""
     job_id: str
     session_id: str
     audio_file_id: str
@@ -110,3 +110,10 @@ class LLMMessage(BaseModel):
     speaker_s3_key: str   # 화자 분리 결과 JSON S3 경로
     asr_s3_key: str       # ASR 결과 JSON S3 경로
     options: JobOptions = JobOptions()
+
+
+class ReportJobMessage(BaseModel):
+    """BE finalize → report-analysis-queue 발행 메시지. LLM GPU Worker가 수신한다."""
+    job_id: str
+    session_id: str
+    transcript_id: str

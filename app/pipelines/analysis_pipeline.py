@@ -1,7 +1,7 @@
 # 3단계 분리 파이프라인
 #
-# run_cpu_stage    : VAD + 전처리 → S3 저장 → audio-ml-queue 발행
-# run_ml_gpu_stage : pyannote + Whisper → S3 저장 → llm-queue 발행
+# run_cpu_stage    : VAD + 전처리 → S3 저장 → gpu-inference-queue 발행
+# run_ml_gpu_stage : pyannote + Whisper → S3 저장 → report-analysis-queue 발행 (BE finalize 경유)
 # run_llm_gpu_stage: 정렬 + 지표 + RAG + EXAONE → 최종 S3/RDS 저장
 #
 # 각 스테이지는 독립적으로 실행되며 S3를 통해 중간 결과를 넘긴다.
@@ -30,7 +30,7 @@ from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.models.llm_exaone import EXAONEWrapper
 from app.rag.retriever import Retriever
 from app.storage import s3_client
-from app.storage.rds import save_transcript_draft, update_analysis_job_status
+from app.storage.rds import save_transcript_draft, update_analysis_job_status, update_session_status
 from app.config import settings
 from app.observability.metrics import record_sqs_publish, record_stage_duration
 from app.observability.sqs import build_message_attributes_from_current_context
@@ -73,7 +73,7 @@ def _send_sqs(queue_url: str, message_body: str, stage: str) -> None:
 # ---------------------------------------------------------------------------
 
 async def run_cpu_stage(message: JobMessage, models: CPUModels) -> None:
-    """전처리 + VAD 실행 후 S3에 저장하고 audio-ml-queue에 발행한다."""
+    """전처리 + VAD 실행 후 S3에 저장하고 gpu-inference-queue에 발행한다."""
     tracer = trace.get_tracer(__name__)
     job_id = message.job_id
     session_id = message.session_id
@@ -135,7 +135,7 @@ async def run_cpu_stage(message: JobMessage, models: CPUModels) -> None:
                 "cpu-to-ml",
             )
         record_stage_duration("cpu-worker", "publish", perf_counter() - start_total)
-        logger.info(f"[{job_id}] CPU STAGE: DONE → audio-ml-queue 발행")
+        logger.info(f"[{job_id}] CPU STAGE: DONE → gpu-inference-queue 발행")
 
 
 # ---------------------------------------------------------------------------
@@ -222,12 +222,14 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> 
                 )
                 logger.info(f"[{job_id}] transcript draft 저장 완료: {draft_key}")
 
-            # step 14: analysis_jobs.status → COMPLETED
+            # step 14: sessions.status → ANALYSIS_COMPLETED, analysis_jobs.status → COMPLETED
+            await update_session_status(db, session_id, "ANALYSIS_COMPLETED")
             await update_analysis_job_status(db, job_id, "COMPLETED", pipeline_stage="COMPLETED")
             logger.info(f"[{job_id}] ML GPU STAGE: DONE")
 
         except Exception as exc:
             logger.error(f"[{job_id}] ML GPU STAGE 실패: {exc}")
+            await update_session_status(db, session_id, "FAILED")
             await update_analysis_job_status(
                 db, job_id, "FAILED",
                 pipeline_stage="ML_GPU",

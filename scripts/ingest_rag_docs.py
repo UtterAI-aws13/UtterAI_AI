@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.rag.vector_store import VectorStore
 from app.schemas.rag import RagChunk, ChunkMetadata
-from app.storage.db import engine
+from app.storage.db import get_engine
 
 DOCUMENTS = [
     {
@@ -97,7 +97,7 @@ async def main():
     embedding_model.load()
     print("임베딩 모델 로드 완료")
 
-    async with AsyncSession(engine) as session:
+    async with AsyncSession(get_engine()) as session:
         vector_store = VectorStore(session)
 
         for doc_info in DOCUMENTS:

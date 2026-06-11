@@ -126,6 +126,130 @@ def generate_report(
 
 
 # ---------------------------------------------------------------------------
+# Bedrock pipeline — real RDS data
+# ---------------------------------------------------------------------------
+
+def _compute_metrics_from_segments(segments: list[dict]) -> dict:
+    """transcript_segments 목록에서 언어 지표를 계산한다.
+
+    MLU는 형태소 분석기(Kiwi)가 없으므로 단어(공백) 기준으로 계산한다.
+    NTW/NDW/TTR은 PATIENT 발화의 공백 분리 토큰 기준.
+    반응 지연은 SLP 발화 종료 → PATIENT 발화 시작 간격(0~10초 범위).
+    """
+    patient_segs = [s for s in segments if s.get("speaker_role") == "PATIENT" and s.get("text")]
+
+    all_words = [w for s in patient_segs for w in s["text"].split() if w]
+    ntw = len(all_words)
+    ndw = len(set(all_words))
+    ttr = round(ndw / ntw, 3) if ntw else 0.0
+    mlu_word = (
+        round(sum(len(s["text"].split()) for s in patient_segs) / len(patient_segs), 2)
+        if patient_segs else 0.0
+    )
+
+    latencies: list[float] = []
+    for i in range(1, len(segments)):
+        prev, curr = segments[i - 1], segments[i]
+        if (
+            prev.get("speaker_role") == "SLP"
+            and curr.get("speaker_role") == "PATIENT"
+            and prev.get("end_ms") is not None
+            and curr.get("start_ms") is not None
+        ):
+            gap = (curr["start_ms"] - prev["end_ms"]) / 1000.0
+            if 0 <= gap <= 10:
+                latencies.append(gap)
+
+    return {
+        "total_utterances": len(patient_segs),
+        "ntw": ntw,
+        "ndw": ndw,
+        "ttr": ttr,
+        "mlu_word": mlu_word,
+        "avg_response_latency_sec": round(sum(latencies) / len(latencies), 2) if latencies else 0.0,
+        "max_response_latency_sec": round(max(latencies), 2) if latencies else 0.0,
+    }
+
+
+async def run_bedrock_report_stage(message: "ReportJobMessage", retriever, db) -> None:
+    """transcript_segments를 RDS에서 읽어 RAG + Bedrock Claude로 리포트를 생성하고 저장한다."""
+    from loguru import logger
+    from app.schemas.job import ReportJobMessage  # noqa: F401 (type hint)
+    from app.pipelines.bedrock_client import invoke_claude
+    from app.rag.prompt_templates import build_bedrock_report_prompt
+    from app.rag.retriever import retrieve_evidence
+    from app.storage.rds import get_transcript_segments, get_session_context, save_report, update_session_status
+    from app.config import settings
+
+    job_id = message.job_id
+    session_id = message.session_id
+    transcript_id = message.transcript_id
+
+    try:
+        logger.info(f"[{job_id}] REPORT STAGE: LOADING TRANSCRIPT")
+        segments = await get_transcript_segments(db, transcript_id)
+
+        logger.info(f"[{job_id}] REPORT STAGE: COMPUTING METRICS ({len(segments)} segments)")
+        metrics = _compute_metrics_from_segments(segments)
+
+        logger.info(f"[{job_id}] REPORT STAGE: LOADING SESSION CONTEXT")
+        session_ctx = await get_session_context(db, session_id)
+        session = {
+            "session_id": session_id,
+            "job_id": job_id,
+            **session_ctx,
+        }
+
+        patient_utterances = [
+            {"speaker_role": s["speaker_role"], "text": s["text"]}
+            for s in segments
+            if s.get("speaker_role") == "PATIENT" and s.get("text")
+        ]
+        all_utterances = [
+            {"speaker_role": s["speaker_role"], "text": s["text"]}
+            for s in segments
+            if s.get("text")
+        ]
+
+        logger.info(f"[{job_id}] REPORT STAGE: RAG")
+        evidence = await retrieve_evidence(
+            metrics=metrics,
+            session=session,
+        )
+
+        logger.info(f"[{job_id}] REPORT STAGE: BEDROCK (evidence={len(evidence)})")
+        prompt = build_bedrock_report_prompt(
+            metrics=metrics,
+            utterances=patient_utterances or all_utterances,
+            session=session,
+            evidence=evidence,
+        )
+        report_data = invoke_claude(prompt)
+
+        soap_note = report_data.get("soap_note", {})
+        clinical_flags = report_data.get("clinical_flags", [])
+        evidence_chunk_ids = [e.get("chunk_id", "") for e in evidence if isinstance(e, dict)]
+
+        logger.info(f"[{job_id}] REPORT STAGE: SAVING")
+        await save_report(
+            db=db,
+            job_id=job_id,
+            session_id=session_id,
+            soap_note=soap_note,
+            clinical_flags=clinical_flags,
+            evidence_chunk_ids=evidence_chunk_ids,
+            model_used=settings.bedrock_report_model_id,
+        )
+        await update_session_status(db, session_id, "REPORT_READY")
+        logger.info(f"[{job_id}] REPORT STAGE: DONE")
+
+    except Exception as exc:
+        logger.error(f"[{job_id}] REPORT STAGE 실패: {exc}")
+        await update_session_status(db, session_id, "FAILED")
+        raise
+
+
+# ---------------------------------------------------------------------------
 # Bedrock + Mock pipeline (local dev / MVP)
 # ---------------------------------------------------------------------------
 

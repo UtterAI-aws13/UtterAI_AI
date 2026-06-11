@@ -1,7 +1,7 @@
 # LLM GPU Worker
 # utterai-dev-report-analysis-queue 폴링
-# 로드 모델: KURE-v1 embedding (RAG용), EXAONE LLM
-# 담당 단계: 정렬 + 지표 + RAG + EXAONE → 최종 S3/RDS 저장
+# 로드 모델: KURE-v1 embedding (RAG용)
+# 담당 단계: RAG 검색 + Bedrock Claude 리포트 생성 → RDS 저장
 import asyncio
 import json
 
@@ -15,31 +15,26 @@ from app.observability.otel import initialize_observability
 from app.observability.metrics import record_sqs_receive
 from app.observability.metrics import record_stage_failure
 from app.observability.sqs import extract_context_from_message_attributes
-from app.schemas import LLMMessage
-from app.pipelines.analysis_pipeline import run_llm_gpu_stage, LLMModels
+from app.schemas.job import ReportJobMessage
+from app.pipelines.report_pipeline import run_bedrock_report_stage
 from app.models.embedding_kure import KUREEmbeddingWrapper
-from app.models.llm_exaone import EXAONEWrapper
 from app.rag.vector_store import VectorStore
 from app.rag.retriever import Retriever
 from app.storage.db import get_engine
+from app.storage.rds import get_be_engine
 
 
-def _load_base_models() -> tuple[KUREEmbeddingWrapper, EXAONEWrapper]:
+def _load_embedding() -> KUREEmbeddingWrapper:
     embedding = KUREEmbeddingWrapper(settings.embedding_model_name)
     embedding.load()
     logger.info("KURE embedding 로드 완료")
-
-    llm = EXAONEWrapper(settings.llm_model_name, device=settings.llm_device)
-    llm.load()
-    logger.info("EXAONE LLM 로드 완료")
-
-    return embedding, llm
+    return embedding
 
 
 def start_worker() -> None:
     initialize_observability()
     sqs = boto3.client("sqs", region_name=settings.aws_region)
-    embedding, llm = _load_base_models()
+    embedding = _load_embedding()
     logger.info(f"LLM GPU Worker 시작. 큐: {settings.sqs_report_analysis_queue_url}")
 
     while True:
@@ -47,7 +42,7 @@ def start_worker() -> None:
             QueueUrl=settings.sqs_report_analysis_queue_url,
             MaxNumberOfMessages=1,
             WaitTimeSeconds=20,
-            VisibilityTimeout=1800,
+            VisibilityTimeout=600,
             MessageAttributeNames=["All"],
         )
         messages = response.get("Messages", [])
@@ -61,26 +56,26 @@ def start_worker() -> None:
 
         try:
             tracer = trace.get_tracer(__name__)
-            with tracer.start_as_current_span("worker.llm.message", context=message_context):
+            with tracer.start_as_current_span("worker.report.message", context=message_context):
                 record_sqs_receive("llm-gpu-worker")
-                msg = LLMMessage(**body)
+                msg = ReportJobMessage(**body)
 
                 async def _run():
-                    async with AsyncSession(get_engine()) as session:
-                        vector_store = VectorStore(session)
-                        retriever = Retriever(
-                            vector_store, embedding,
-                            settings.rag_top_k, settings.rag_score_threshold,
-                        )
-                        models = LLMModels(embedding=embedding, llm=llm, retriever=retriever)
-                        await run_llm_gpu_stage(msg, models)
+                    async with AsyncSession(get_engine()) as rag_session:
+                        async with AsyncSession(get_be_engine()) as be_session:
+                            vector_store = VectorStore(rag_session)
+                            retriever = Retriever(
+                                vector_store, embedding,
+                                settings.rag_top_k, settings.rag_score_threshold,
+                            )
+                            await run_bedrock_report_stage(msg, retriever, be_session)
 
                 asyncio.run(_run())
                 sqs.delete_message(
                     QueueUrl=settings.sqs_report_analysis_queue_url,
                     ReceiptHandle=receipt_handle,
                 )
-                logger.info(f"LLM STAGE 완료: job_id={body.get('job_id')}")
+                logger.info(f"REPORT STAGE 완료: job_id={body.get('job_id')}")
         except Exception as e:
             record_stage_failure("llm-gpu-worker", "message")
-            logger.error(f"LLM STAGE 실패: {e}")
+            logger.error(f"REPORT STAGE 실패: {e}")

@@ -36,8 +36,12 @@ def build_bedrock_report_prompt(
     age_months = session.get("patient_age_months", 0)
     age_str = f"만 {age_months // 12}세 {age_months % 12}개월" if age_months else "나이 미상"
 
+    # mlu_word: 단어 기준 MLU (형태소 분석기 미적용 단계에서 계산한 근사값)
+    # mlu_morpheme: 1차 파이프라인(Kiwi)에서 계산된 형태소 기준 MLU (있으면 우선 사용)
+    mlu_val = metrics.get("mlu_morpheme") or metrics.get("mlu_word", "N/A")
+    mlu_label = "MLU-m (형태소)" if metrics.get("mlu_morpheme") else "MLU (단어 근사)"
     metrics_text = (
-        f"- MLU-m: {metrics.get('mlu_morpheme', 'N/A')}\n"
+        f"- {mlu_label}: {mlu_val}\n"
         f"- NTW: {metrics.get('ntw', 'N/A')}\n"
         f"- NDW: {metrics.get('ndw', 'N/A')}\n"
         f"- TTR: {metrics.get('ttr', 'N/A')}\n"

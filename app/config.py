@@ -63,7 +63,6 @@ class Settings(BaseSettings):
     worker_type: str = "cpu"
 
     # SQS
-    sqs_analysis_queue_url: str = ""
     sqs_audio_preprocess_queue_url: str = ""
     sqs_gpu_inference_queue_url: str = ""
     sqs_report_analysis_queue_url: str = ""
