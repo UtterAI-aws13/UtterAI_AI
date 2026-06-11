@@ -1,7 +1,7 @@
 # ML GPU Worker
 # utterai-dev-gpu-inference-queue 폴링
 # 로드 모델: pyannote speaker-diarization, Whisper ASR
-# 담당 단계: 화자 분리 + STT → S3 저장 → llm-queue 발행
+# 담당 단계: 화자 분리 + STT → transcript draft 저장 → 완료 (리포트 큐는 BE finalize가 발행)
 import asyncio
 import json
 

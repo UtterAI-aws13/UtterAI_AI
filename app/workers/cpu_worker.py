@@ -1,7 +1,7 @@
 # CPU Worker
 # utterai-dev-audio-preprocess-queue 폴링
 # 로드 모델: Silero VAD, KURE-v1 embedding
-# 담당 단계: 전처리 + VAD → S3 저장 → audio-ml-queue 발행
+# 담당 단계: 전처리 + VAD → S3 저장 → gpu-inference-queue 발행
 import asyncio
 import json
 
