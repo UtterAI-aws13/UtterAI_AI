@@ -30,7 +30,7 @@ from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.models.llm_exaone import EXAONEWrapper
 from app.rag.retriever import Retriever
 from app.storage import s3_client
-from app.storage.rds import save_transcript_draft, update_analysis_job_status
+from app.storage.rds import save_transcript_draft, update_analysis_job_status, update_session_status
 from app.config import settings
 from app.observability.metrics import record_sqs_publish, record_stage_duration
 from app.observability.sqs import build_message_attributes_from_current_context
@@ -222,12 +222,14 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> 
                 )
                 logger.info(f"[{job_id}] transcript draft 저장 완료: {draft_key}")
 
-            # step 14: analysis_jobs.status → COMPLETED
+            # step 14: sessions.status → ANALYSIS_COMPLETED, analysis_jobs.status → COMPLETED
+            await update_session_status(db, session_id, "ANALYSIS_COMPLETED")
             await update_analysis_job_status(db, job_id, "COMPLETED", pipeline_stage="COMPLETED")
             logger.info(f"[{job_id}] ML GPU STAGE: DONE")
 
         except Exception as exc:
             logger.error(f"[{job_id}] ML GPU STAGE 실패: {exc}")
+            await update_session_status(db, session_id, "FAILED")
             await update_analysis_job_status(
                 db, job_id, "FAILED",
                 pipeline_stage="ML_GPU",

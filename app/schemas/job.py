@@ -110,3 +110,10 @@ class LLMMessage(BaseModel):
     speaker_s3_key: str   # 화자 분리 결과 JSON S3 경로
     asr_s3_key: str       # ASR 결과 JSON S3 경로
     options: JobOptions = JobOptions()
+
+
+class ReportJobMessage(BaseModel):
+    """BE finalize → report-analysis-queue 발행 메시지. LLM GPU Worker가 수신한다."""
+    job_id: str
+    session_id: str
+    transcript_id: str

@@ -126,6 +126,73 @@ def generate_report(
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Bedrock pipeline — real RDS data
+# ---------------------------------------------------------------------------
+
+async def run_bedrock_report_stage(message: "ReportJobMessage", retriever, db) -> None:
+    """transcript_segments를 RDS에서 읽어 RAG + Bedrock Claude로 리포트를 생성하고 저장한다."""
+    from loguru import logger
+    from app.schemas.job import ReportJobMessage  # noqa: F401 (type hint)
+    from app.pipelines.bedrock_client import invoke_claude
+    from app.rag.prompt_templates import build_bedrock_report_prompt
+    from app.rag.retriever import retrieve_evidence
+    from app.storage.rds import get_transcript_segments, save_report, update_session_status
+    from app.config import settings
+
+    job_id = message.job_id
+    session_id = message.session_id
+    transcript_id = message.transcript_id
+
+    try:
+        logger.info(f"[{job_id}] REPORT STAGE: LOADING TRANSCRIPT")
+        segments = await get_transcript_segments(db, transcript_id)
+        utterances = [
+            {"speaker_role": s["speaker_role"], "text": s["text"]}
+            for s in segments
+            if s.get("text")
+        ]
+        patient_utterances = [u for u in utterances if u["speaker_role"] == "PATIENT"]
+
+        logger.info(f"[{job_id}] REPORT STAGE: RAG ({len(utterances)} segments)")
+        evidence = await retrieve_evidence(
+            metrics={},
+            session={"session_id": session_id, "job_id": job_id},
+        )
+
+        logger.info(f"[{job_id}] REPORT STAGE: BEDROCK (evidence={len(evidence)})")
+        prompt = build_bedrock_report_prompt(
+            metrics={},
+            utterances=patient_utterances or utterances,
+            session={"session_id": session_id, "job_id": job_id},
+            evidence=evidence,
+        )
+        report_data = invoke_claude(prompt)
+
+        soap_note = report_data.get("soap_note", {})
+        clinical_flags = report_data.get("clinical_flags", [])
+        evidence_chunk_ids = [e.get("chunk_id", "") for e in evidence if isinstance(e, dict)]
+
+        logger.info(f"[{job_id}] REPORT STAGE: SAVING")
+        await save_report(
+            db=db,
+            job_id=job_id,
+            session_id=session_id,
+            soap_note=soap_note,
+            clinical_flags=clinical_flags,
+            evidence_chunk_ids=evidence_chunk_ids,
+            model_used=settings.bedrock_report_model_id,
+        )
+        await update_session_status(db, session_id, "REPORT_READY")
+        logger.info(f"[{job_id}] REPORT STAGE: DONE")
+
+    except Exception as exc:
+        logger.error(f"[{job_id}] REPORT STAGE 실패: {exc}")
+        await update_session_status(db, session_id, "FAILED")
+        raise
+
+
+# ---------------------------------------------------------------------------
 # Bedrock + Mock pipeline (local dev / MVP)
 # ---------------------------------------------------------------------------
 

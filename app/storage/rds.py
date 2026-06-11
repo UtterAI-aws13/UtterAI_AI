@@ -1,4 +1,4 @@
-"""RDS write helpers for transcript draft and analysis job status.
+"""RDS read/write helpers for transcript draft, report, and job/session status.
 
 BE RDS에 직접 쓰는 헬퍼. AI pgvector DB(db.py)와 별개의 엔진을 사용한다.
 """
@@ -85,6 +85,109 @@ async def save_transcript_draft(
 
     await db.commit()
     return transcript_id
+
+
+async def get_transcript_segments(
+    db: AsyncSession,
+    transcript_id: str,
+) -> list[dict]:
+    """transcript_segments rows를 발화 순서대로 반환한다."""
+    result = await db.execute(
+        text("""
+            SELECT speaker_role, text, start_ms, end_ms
+            FROM transcript_segments
+            WHERE transcript_id = CAST(:transcript_id AS uuid)
+            ORDER BY segment_index
+        """),
+        {"transcript_id": transcript_id},
+    )
+    return [dict(row._mapping) for row in result]
+
+
+async def save_report(
+    db: AsyncSession,
+    job_id: str,
+    session_id: str,
+    soap_note: dict,
+    clinical_flags: list,
+    evidence_chunk_ids: list,
+    model_used: str,
+) -> str:
+    """reports + report_segments rows를 삽입하고 report_id를 반환한다."""
+    report_id = str(uuid.uuid4())
+    now = datetime.now(UTC)
+
+    await db.execute(
+        text("""
+            INSERT INTO reports
+                (id, session_id, job_id, status, model_used, clinical_flags,
+                 evidence_chunk_ids, requires_human_review, generated_at, updated_at)
+            VALUES
+                (CAST(:id AS uuid), CAST(:session_id AS uuid), CAST(:job_id AS uuid),
+                 'DRAFT', :model_used, CAST(:clinical_flags AS jsonb),
+                 CAST(:evidence_chunk_ids AS jsonb), true, :now, :now)
+        """),
+        {
+            "id": report_id,
+            "session_id": session_id,
+            "job_id": job_id,
+            "model_used": model_used,
+            "clinical_flags": __import__("json").dumps(clinical_flags),
+            "evidence_chunk_ids": __import__("json").dumps(evidence_chunk_ids),
+            "now": now,
+        },
+    )
+
+    soap_map = [
+        ("SUBJECTIVE", soap_note.get("subjective", "")),
+        ("OBJECTIVE",  soap_note.get("objective",  "")),
+        ("ASSESSMENT", soap_note.get("assessment", "")),
+        ("PLAN",       soap_note.get("plan",       "")),
+    ]
+    for idx, (seg_type, content) in enumerate(soap_map):
+        await db.execute(
+            text("""
+                INSERT INTO report_segments
+                    (id, report_id, segment_type, segment_index, ai_content, content, is_edited, created_at)
+                VALUES
+                    (CAST(:id AS uuid), CAST(:report_id AS uuid),
+                     CAST(:segment_type AS report_segment_type),
+                     :segment_index, :content, :content, false, :now)
+            """),
+            {
+                "id": str(uuid.uuid4()),
+                "report_id": report_id,
+                "segment_type": seg_type,
+                "segment_index": idx,
+                "content": content,
+                "now": now,
+            },
+        )
+
+    await db.commit()
+    return report_id
+
+
+async def update_session_status(
+    db: AsyncSession,
+    session_id: str,
+    status: str,
+) -> None:
+    """sessions.status를 갱신한다."""
+    await db.execute(
+        text("""
+            UPDATE sessions
+            SET status     = CAST(:status AS session_status),
+                updated_at = :now
+            WHERE id = CAST(:session_id AS uuid)
+        """),
+        {
+            "status": status,
+            "session_id": session_id,
+            "now": datetime.now(UTC),
+        },
+    )
+    await db.commit()
 
 
 async def update_analysis_job_status(
