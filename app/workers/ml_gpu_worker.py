@@ -8,6 +8,7 @@ import json
 import boto3
 from loguru import logger
 from opentelemetry import trace
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.observability.otel import initialize_observability
@@ -18,6 +19,7 @@ from app.schemas import MLGpuMessage
 from app.pipelines.analysis_pipeline import run_ml_gpu_stage, MLGpuModels
 from app.models.diarization_pyannote import PyannoteWrapper
 from app.models.asr_whisper import WhisperASRWrapper
+from app.storage.rds import get_be_engine
 
 
 def _load_models() -> MLGpuModels:
@@ -64,7 +66,12 @@ def start_worker() -> None:
             with tracer.start_as_current_span("worker.ml_gpu.message", context=message_context):
                 record_sqs_receive("ml-gpu-worker")
                 msg = MLGpuMessage(**body)
-                asyncio.run(run_ml_gpu_stage(msg, models))
+
+                async def _run():
+                    async with AsyncSession(get_be_engine()) as session:
+                        await run_ml_gpu_stage(msg, models, session)
+
+                asyncio.run(_run())
                 sqs.delete_message(
                     QueueUrl=settings.sqs_gpu_inference_queue_url,
                     ReceiptHandle=receipt_handle,

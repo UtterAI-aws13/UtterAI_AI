@@ -43,9 +43,12 @@ cpu = [
     "ffmpeg-python>=0.2.0",
 ]
 gpu = [
-    "torch>=2.3.0",
-    "torchaudio>=2.3.0",
-    "transformers>=4.41.0",
+    # torch 2.4.x: torchaudio.AudioMetaData top-level 제거 전 마지막 안정 버전
+    # torch 2.5+ 필요한 transformers 5.x 와 함께 쓰면 float8_e8m0fnu AttributeError 발생
+    "torch==2.4.1",
+    "torchaudio==2.4.1",
+    # transformers 5.x 는 torch 2.5+ 요구 → 4.47.1 고정
+    "transformers==4.47.1",
     "accelerate>=0.30.0",
     "pyannote.audio>=3.3.0",
     "soundfile>=0.12.1",
