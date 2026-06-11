@@ -1,11 +1,14 @@
-# pgvector 기반 벡터 저장소
-# rag_chunks 테이블에 청크 텍스트와 KURE-v1 임베딩을 저장하고
-# cosine similarity 기반 검색을 제공한다
-import uuid
-from datetime import datetime, timezone
-
-from sqlalchemy import Column, String, Text, DateTime, func, select
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+# pgvector 기반 벡터 저장소 (로컬 개발 전용)
+# 프로덕션에서는 Bedrock KB + Aurora/RDS pgvector로 대체된다.
+#
+# init_db.sql 스키마 기준:
+#   chunk_id TEXT PRIMARY KEY
+#   document_id TEXT NOT NULL
+#   content TEXT NOT NULL
+#   embedding VECTOR(1024) NOT NULL
+#   metadata_json JSONB NOT NULL DEFAULT '{}'
+from sqlalchemy import Column, String, Text, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from pgvector.sqlalchemy import Vector
 
@@ -14,21 +17,13 @@ from app.schemas import RagChunk, RagEvidence
 
 
 class RagChunkORM(Base):
-    """DB_SCHEMA.md AI DB 섹션 rag_chunks 테이블 정의."""
-
     __tablename__ = "rag_chunks"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    source_type = Column(String(100), nullable=False)          # 예: clinical_guideline
-    source_ref = Column(Text, nullable=True)                   # 원문 참조 경로 (document_id)
-    chunk_text = Column(Text, nullable=False)                  # 청크 원문
+    chunk_id = Column(String, primary_key=True)
+    document_id = Column(Text, nullable=False)
+    content = Column(Text, nullable=False)
     embedding = Column(Vector(1024), nullable=False)
-    metadata_json = Column(JSONB, nullable=True)               # chunk_id, title, age_group 등
-    created_at = Column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-    )
+    metadata_json = Column(JSONB, nullable=False, default=dict)
 
 
 class VectorStore:
@@ -36,24 +31,14 @@ class VectorStore:
         self.session = session
 
     async def upsert(self, chunks: list[RagChunk], embeddings: list[list[float]]) -> None:
-        """청크와 임베딩을 배치로 저장한다. 동일 chunk_id(metadata 내)가 있으면 덮어쓴다."""
+        """청크와 임베딩을 저장한다. 동일 chunk_id면 덮어쓴다."""
         for chunk, emb in zip(chunks, embeddings):
-            meta = chunk.metadata.model_dump()
-            # chunk_id로 기존 행을 찾아 id를 재사용해 upsert
-            existing = await self.session.execute(
-                select(RagChunkORM).where(
-                    RagChunkORM.metadata_json["chunk_id"].as_string() == chunk.chunk_id
-                )
-            )
-            existing_row = existing.scalar_one_or_none()
-
             obj = RagChunkORM(
-                id=existing_row.id if existing_row else uuid.uuid4(),
-                source_type=chunk.metadata.source_type,
-                source_ref=chunk.document_id,
-                chunk_text=chunk.content,
+                chunk_id=chunk.chunk_id,
+                document_id=chunk.document_id,
+                content=chunk.content,
                 embedding=emb,
-                metadata_json={**meta, "chunk_id": chunk.chunk_id},
+                metadata_json=chunk.metadata.model_dump(),
             )
             await self.session.merge(obj)
         await self.session.commit()
@@ -72,7 +57,7 @@ class VectorStore:
         stmt = (
             select(RagChunkORM, score_col)
             .order_by(distance_col)
-            .limit(top_k * 3)  # 메타데이터 필터 후 top_k를 채우기 위해 넉넉히 조회
+            .limit(top_k * 3)
         )
 
         result = await self.session.execute(stmt)
@@ -94,12 +79,12 @@ class VectorStore:
                 continue
 
             evidence.append(RagEvidence(
-                document_id=chunk_orm.source_ref or "",
-                chunk_id=meta.get("chunk_id", str(chunk_orm.id)),
+                document_id=chunk_orm.document_id,
+                chunk_id=chunk_orm.chunk_id,
                 title=meta.get("title", ""),
-                source_type=chunk_orm.source_type,
+                source_type=meta.get("source_type", ""),
                 score=round(score, 4),
-                text=chunk_orm.chunk_text,
+                text=chunk_orm.content,
                 metadata=meta,
             ))
 
