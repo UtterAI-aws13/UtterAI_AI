@@ -88,3 +88,7 @@ def start_worker() -> None:
         except Exception as e:
             record_stage_failure("rag-ingest-worker", "message")
             logger.error(f"[ingest] 처리 실패: {e}")
+
+
+if __name__ == "__main__":
+    start_worker()
