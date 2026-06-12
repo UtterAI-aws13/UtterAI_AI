@@ -21,6 +21,8 @@ RUN uv run python scripts/patch_pyannote.py
 COPY app ./app
 
 ENV PYTHONPATH=/app
+ENV PATH="/app/.venv/bin:$PATH"
+
 
 # ml-gpu-worker 기본값. llm-gpu-worker는 K8s Deployment command로 오버라이드.
 CMD ["python", "-m", "app.workers.ml_gpu_worker"]
