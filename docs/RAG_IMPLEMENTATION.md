@@ -40,10 +40,49 @@ app/
 
 ```
 문서 파일 (.txt / .pdf)
-  └─ ingest.py: _extract_text()          파일 읽기
+  └─ ingest.py: _extract_text()          파일 읽기 (PDF: pymupdf 우선 → pdfplumber 폴백)
   └─ chunker.py: make_chunks()           문장 단위 분할 + sliding window overlap
   └─ embedding_kure.py: predict()        KURE-v1으로 청크별 1024차원 벡터 생성
   └─ vector_store.py: upsert()           rag_chunks 테이블에 청크 + 벡터 저장
+```
+
+### 3.0 지원 파일 형식
+
+| 확장자 | 추출 방식 |
+|---|---|
+| `.txt` | `Path.read_text(encoding="utf-8")` |
+| `.pdf` | pymupdf(`fitz`) 우선 → pdfplumber 폴백 |
+
+PDF는 학술 논문에 포함된 수식·기호 보존이 중요하므로 pymupdf를 기본으로 사용합니다.
+pymupdf가 설치되지 않으면 pdfplumber로 자동 폴백하며, 둘 다 없으면 ImportError를 발생시킵니다.
+
+```bash
+uv add pymupdf   # 권장
+```
+
+### 3.4 로컬 인제스트 스크립트
+
+`scripts/ingest_rag_docs.py`는 **로컬 전용** 스크립트입니다. dev/prod에서는 SQS 기반 `rag_ingest_worker.py`를 사용합니다.
+
+**스캔 대상 디렉토리**
+
+```
+docs/
+├── rag/      - *.txt  (source_type=clinical_guide)
+└── papers/   - *.pdf  (source_type=research_paper)
+```
+
+**파일명 규칙**: `<document_id>__<title>.<ext>`
+
+```
+doc_mlu_guide__MLU_해석_가이드.txt        → document_id=doc_mlu_guide, title="MLU 해석 가이드"
+doc_utterance__발화분석과제.pdf           → document_id=doc_utterance, title="발화분석과제"
+```
+
+`__`가 없으면 파일명 전체를 document_id로 사용합니다.
+
+```bash
+uv run python scripts/ingest_rag_docs.py
 ```
 
 ### 3.1 청크 분할 전략
@@ -177,6 +216,31 @@ concepts:
       - "mlu_morpheme"
     language_area:
       - "expressive_language"
+
+  MLU_formula:
+    ko: "MLU 계산식"
+    related_terms:
+      - "총 형태소 수 / 총 발화 수"
+      - "형태소 분절 방법"
+      - "MLU-w"
+      - "MLU-m"
+      - "mean length of utterance"
+    metrics:
+      - "mlu_morpheme"
+    language_area:
+      - "expressive_language"
+
+  TTR_formula:
+    ko: "TTR 계산식"
+    related_terms:
+      - "NDW / NTW"
+      - "어휘 다양도 계산"
+      - "Type Token Ratio 공식"
+      - "어휘 비율"
+    metrics:
+      - "ttr"
+    language_area:
+      - "vocabulary"
 ```
 
 ### 5.2 동작 방식

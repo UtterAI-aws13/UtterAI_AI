@@ -238,9 +238,9 @@ pyannote만 사전 준비가 필요합니다.
 cp .env.example .env
 # .env 에 HF_TOKEN 입력
 
-# 2. 의존성 설치
-pip install -r requirements.txt
+# 2. 의존성 설치 (uv)
+uv sync --extra cpu
 
 # 3. API 실행 (모델은 첫 요청 시 자동 다운로드)
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```

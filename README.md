@@ -87,27 +87,34 @@ app/
 | `BEDROCK_REPORT_MODEL_ID` | Bedrock 모델 ID |
 | `WORKER_TYPE` | Pod에서 주입 (`cpu` / `ml-gpu` / `llm-gpu`) |
 
-## 로컬 실행
+## 데모 실행 (권장)
+
+BE / AI / FE를 한 번에 올리려면 프로젝트 루트(`../`)의 데모 스크립트를 사용합니다.
 
 ```bash
-# 1. 가상환경 설정 (uv 사용)
-python -m venv .venv
-.venv\Scripts\activate      # Windows
-source .venv/bin/activate   # macOS / Linux
+cd ..
+./demo-up.sh    # DB 기동 → 마이그레이션 → RAG 인제스트 → 서버 시작
+./demo-down.sh  # 서버 종료 + DB 컨테이너 정지
+./demo-clean.sh # DB 볼륨 초기화 (재데모 시)
+```
 
-pip install uv
-uv pip install -e ".[cpu,dev]"   # CPU 환경
-# uv pip install -e ".[gpu,dev]"  # GPU 환경
+---
+
+## 로컬 실행 (AI 서버 단독)
+
+```bash
+# 1. 의존성 설치 (uv)
+uv sync --extra cpu   # CPU 환경
+# uv sync --extra gpu # GPU 환경
 
 # 2. 환경 파일 설정
 cp .env.example .env  # HF_TOKEN 등 입력
 
 # 3. PostgreSQL + pgvector 실행
 docker compose up -d
-python scripts/create_tables.py  # 최초 1회
 
 # 4. FastAPI 서버 실행
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
 ### SQS Worker 로컬 실행
@@ -142,7 +149,7 @@ python scripts/run_ml_gpu_worker.py
 | `scripts/dev_run.py --audio file.wav` | SQS/S3 없이 전체 파이프라인 로컬 실행 |
 | `scripts/test_models.py --audio file.wav` | VAD + 화자분리 + ASR 단독 테스트 |
 | `scripts/test_pipeline.py` | Mock 데이터로 Bedrock SOAP Note 생성 테스트 |
-| `scripts/ingest_rag_docs.py` | `docs/rag/` txt 파일을 pgvector에 ingestion |
+| `scripts/ingest_rag_docs.py` | `docs/rag/*.txt` + `docs/papers/*.pdf` 스캔 → pgvector 인제스트 (로컬 전용) |
 
 ## API 엔드포인트
 
@@ -157,6 +164,12 @@ python scripts/run_ml_gpu_worker.py
 
 > 운영 환경에서는 BE → SQS → CPU Worker 경로로 Job이 진입한다. `/internal/ai/analysis-jobs` 엔드포인트는 BE가 HTTP로 직접 호출하던 구 방식의 잔재로, 현재는 dev/test tooling 용도로만 유지된다.
 
+
+## 테스트
+
+```bash
+uv run python -m pytest tests/
+```
 
 ## 배포 구조
 
