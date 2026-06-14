@@ -16,9 +16,9 @@ class Settings(BaseSettings):
 
     # AWS
     aws_region: str = "ap-northeast-2"
-    s3_bucket_audio: str = "utterai-audio-dev"
+    s3_bucket_audio: str = "utterai-dev-raw-audio"
     s3_bucket_report: str = "utterai-dev-reports"
-    s3_bucket_rag: str = "utterai-rag-dev"
+    s3_bucket_rag: str = "utterai-dev-rag-ingest"
 
     # AI DB - pgvector 확장 포함된 PostgreSQL (RAG 벡터 검색용)
     db_user: str = ""
