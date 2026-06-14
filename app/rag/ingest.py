@@ -1,5 +1,7 @@
 # RAG 문서 수집 파이프라인 진입점
 # 파일(TXT/PDF) → 텍스트 추출 → 청크 분할 → KURE-v1 임베딩 → pgvector 저장
+#
+# PDF 추출 우선순위: pymupdf(수식/레이아웃 보존) → pdfplumber(폴백)
 import uuid
 from pathlib import Path
 
@@ -7,6 +9,26 @@ from app.schemas import ChunkMetadata
 from app.rag import chunker
 from app.rag.vector_store import VectorStore
 from app.models.embedding_kure import KUREEmbeddingWrapper
+
+
+def _extract_text_pdf(file_path: str) -> str:
+    try:
+        import fitz  # pymupdf
+        doc = fitz.open(file_path)
+        pages = [page.get_text("text") for page in doc]
+        doc.close()
+        return "\n".join(pages)
+    except ImportError:
+        pass
+
+    try:
+        import pdfplumber
+        with pdfplumber.open(file_path) as pdf:
+            return "\n".join(page.extract_text() or "" for page in pdf.pages)
+    except ImportError:
+        pass
+
+    raise ImportError("PDF 파싱에 pymupdf 또는 pdfplumber가 필요합니다: uv add pymupdf")
 
 
 def _extract_text(file_path: str) -> str:
@@ -17,12 +39,7 @@ def _extract_text(file_path: str) -> str:
         return path.read_text(encoding="utf-8")
 
     if suffix == ".pdf":
-        try:
-            import pdfplumber
-            with pdfplumber.open(file_path) as pdf:
-                return "\n".join(page.extract_text() or "" for page in pdf.pages)
-        except ImportError:
-            raise ImportError("PDF 파싱에 pdfplumber가 필요합니다: pip install pdfplumber")
+        return _extract_text_pdf(file_path)
 
     raise ValueError(f"지원하지 않는 파일 형식: {suffix} (지원: .txt, .pdf)")
 
