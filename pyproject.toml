@@ -20,6 +20,7 @@ dependencies = [
     "kiwipiepy>=0.18.0",
     "langgraph>=0.2.0",
     "pyyaml>=6.0.1",
+    "pymupdf>=1.24.0",
     # Utils
     "python-dotenv>=1.0.0",
     "loguru>=0.7.2",
