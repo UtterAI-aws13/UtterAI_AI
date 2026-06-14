@@ -20,7 +20,10 @@ def get_be_engine():
     global _be_engine
     if _be_engine is None:
         from app.config import settings
-        _be_engine = create_async_engine(settings.be_database_url)
+        _be_engine = create_async_engine(
+            settings.be_database_url,
+            connect_args={"sslmode": "require"},
+        )
     return _be_engine
 
 _TERMINAL_STATUSES = {"COMPLETED", "FAILED"}
