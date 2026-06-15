@@ -56,15 +56,16 @@ def initialize_observability() -> None:
     resource = _resource()
 
     tracer_provider = TracerProvider(resource=resource)
-    tracer_provider.add_span_processor(BatchSpanProcessor(_trace_exporter()))
+    if settings.otel_traces_exporter != "none":
+        tracer_provider.add_span_processor(BatchSpanProcessor(_trace_exporter()))
     trace.set_tracer_provider(tracer_provider)
 
-    metrics.set_meter_provider(
-        MeterProvider(
-            resource=resource,
-            metric_readers=[PeriodicExportingMetricReader(_metric_exporter())],
-        )
+    metric_readers = (
+        [PeriodicExportingMetricReader(_metric_exporter())]
+        if settings.otel_metrics_exporter != "none"
+        else []
     )
+    metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=metric_readers))
 
     try:
         SQLAlchemyInstrumentor().instrument(engine=get_engine().sync_engine)

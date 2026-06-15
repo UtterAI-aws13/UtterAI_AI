@@ -20,9 +20,10 @@ def get_be_engine():
     global _be_engine
     if _be_engine is None:
         from app.config import settings
+        ssl_mode = "disable" if settings.app_env == "local" else "require"
         _be_engine = create_async_engine(
             settings.be_database_url,
-            connect_args={"sslmode": "require"},
+            connect_args={"sslmode": ssl_mode},
         )
     return _be_engine
 

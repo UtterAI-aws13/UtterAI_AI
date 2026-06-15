@@ -114,18 +114,31 @@ docker exec -it utterai_postgres psql -U utterai -d utterai_ai
 
 ### 3.3 .env 설정
 
-`.env.example`을 복사해서 `.env`를 만들고 DATABASE_URL을 설정합니다.
+`.env.example`을 복사해서 `.env`를 만듭니다.
 
-```env
-DATABASE_URL=postgresql+psycopg://utterai:utterai@localhost:5432/utterai_ai
+```bash
+cp .env.example .env
 ```
 
-드라이버 설명:
+AI DB 연결 관련 변수 (로컬 기본값은 docker-compose.yml과 일치합니다):
 
-| 드라이버 | 패키지 | 비고 |
-|---|---|---|
-| `postgresql+psycopg` | `psycopg[binary]` | async 지원, 권장 |
-| `postgresql+asyncpg` | `asyncpg` | 대안 |
+```env
+DB_USER=utterai
+DB_PASSWORD=utterai
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=utterai_ai
+```
+
+BE RDS 연결 변수 (ML GPU Worker 전용 — `transcripts` / `analysis_jobs` 쓰기):
+
+```env
+BE_DB_USER=
+BE_DB_PASSWORD=
+BE_DB_HOST=
+BE_DB_PORT=5432
+BE_DB_NAME=
+```
 
 ---
 
@@ -274,19 +287,25 @@ CREATE EXTENSION vector;
 
 ### 7.2 연결 설정
 
+운영 환경에서는 AWS Secrets Manager → ExternalSecret Operator를 통해 아래 변수가 Pod에 주입됩니다.
+
 ```env
-# 운영 환경 .env (Secrets Manager 또는 EKS Secret으로 주입)
-DATABASE_URL=postgresql+psycopg://utterai:PASSWORD@utterai-db.xxx.rds.amazonaws.com:5432/utterai_ai
+DB_USER=utterai
+DB_PASSWORD=<Secrets Manager 주입>
+DB_HOST=utterai-db.xxx.rds.amazonaws.com
+DB_PORT=5432
+DB_NAME=utterai_ai
 ```
 
 ### 7.3 테이블 생성 (운영 최초 1회)
 
 ```bash
-# ECS Task 또는 EC2에서 실행
-python scripts/create_tables.py
+# 마이그레이션 Job 또는 EC2에서 실행
+uv run python scripts/create_tables.py
 
 # 또는 RDS에 직접 접속해 SQL 실행
-psql $DATABASE_URL -f scripts/init_db.sql
+psql "postgresql://utterai:PASSWORD@utterai-db.xxx.rds.amazonaws.com:5432/utterai_ai" \
+  -f scripts/init_db.sql
 ```
 
 ---
@@ -294,19 +313,23 @@ psql $DATABASE_URL -f scripts/init_db.sql
 ## 8. 로컬 개발 빠른 시작 요약
 
 ```bash
-# 1. PostgreSQL + pgvector 컨테이너 시작
+# 1. PostgreSQL + pgvector 컨테이너 시작 (init_db.sql 자동 실행 포함)
 docker compose up -d
 
 # 2. .env 설정
 cp .env.example .env
-# DATABASE_URL=postgresql+psycopg://utterai:utterai@localhost:5432/utterai_ai
 
-# 3. Python 패키지 설치
-pip install -r requirements.txt
+# 3. 의존성 설치 (uv)
+uv sync --extra cpu
 
 # 4. 연결 확인 (테이블은 docker-compose 실행 시 자동 생성됨)
 docker exec -it utterai_postgres psql -U utterai -d utterai_ai -c "\dt"
 
-# 5. API 실행
-uvicorn app.main:app --reload
+# 5. RAG 문서 인제스트 (최초 1회)
+uv run python scripts/ingest_rag_docs.py
+
+# 6. API 실행
+uv run uvicorn app.main:app --reload --port 8001
 ```
+
+> 전체 스택(BE + AI + FE)을 한 번에 실행하려면 루트 디렉토리의 `demo-up.sh`를 사용하세요.

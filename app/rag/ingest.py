@@ -1,5 +1,7 @@
 # RAG 문서 수집 파이프라인 진입점
 # 파일(TXT/PDF) → 텍스트 추출 → 청크 분할 → KURE-v1 임베딩 → pgvector 저장
+#
+# PDF 추출 우선순위: pymupdf(수식/레이아웃 보존) → pdfplumber(폴백)
 import uuid
 from pathlib import Path
 
@@ -27,7 +29,7 @@ def _extract_text_pdf(file_path: str) -> str:
     except ImportError:
         pass
 
-    raise ImportError("PDF 파싱에 pymupdf 또는 pdfplumber가 필요합니다: pip install pymupdf")
+    raise ImportError("PDF 파싱에 pymupdf 또는 pdfplumber가 필요합니다: uv add pymupdf")
 
 
 def _extract_text(file_path: str) -> str:
