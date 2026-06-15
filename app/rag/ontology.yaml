@@ -80,3 +80,29 @@ concepts:
       - "치료사 발화"
     language_area:
       - "speech_processing"
+
+  MLU_formula:
+    ko: "MLU 계산식"
+    related_terms:
+      - "총 형태소 수 / 총 발화 수"
+      - "형태소 분절 방법"
+      - "발화 길이 계산"
+      - "MLU-w"
+      - "MLU-m"
+      - "mean length of utterance"
+    metrics:
+      - "mlu_morpheme"
+    language_area:
+      - "expressive_language"
+
+  TTR_formula:
+    ko: "TTR 계산식"
+    related_terms:
+      - "NDW / NTW"
+      - "어휘 다양도 계산"
+      - "Type Token Ratio 공식"
+      - "어휘 비율"
+    metrics:
+      - "ttr"
+    language_area:
+      - "vocabulary"
