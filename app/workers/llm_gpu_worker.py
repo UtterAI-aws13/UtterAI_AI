@@ -79,3 +79,7 @@ def start_worker() -> None:
         except Exception as e:
             record_stage_failure("llm-gpu-worker", "message")
             logger.error(f"REPORT STAGE 실패: {e}")
+
+
+if __name__ == "__main__":
+    start_worker()
