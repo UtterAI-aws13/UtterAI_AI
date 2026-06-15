@@ -12,6 +12,7 @@ from app.models.embedding_kure import KUREEmbeddingWrapper
 
 
 def _extract_text_pdf(file_path: str) -> str:
+    """pymupdf 우선 시도, 없으면 pdfplumber로 폴백."""
     try:
         import fitz  # pymupdf
         doc = fitz.open(file_path)
