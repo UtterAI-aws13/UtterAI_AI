@@ -11,7 +11,11 @@ _engine = None
 def get_engine():
     global _engine
     if _engine is None:
-        _engine = create_async_engine(settings.database_url)
+        ssl_mode = "disable" if settings.app_env == "local" else "require"
+        _engine = create_async_engine(
+            settings.database_url,
+            connect_args={"sslmode": ssl_mode},
+        )
     return _engine
 
 
