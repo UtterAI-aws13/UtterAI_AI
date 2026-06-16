@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from app.schemas.transcript import Utterance
 
@@ -24,6 +25,7 @@ def get_be_engine():
         _be_engine = create_async_engine(
             settings.be_database_url,
             connect_args={"sslmode": ssl_mode},
+            poolclass=NullPool,
         )
     return _be_engine
 

@@ -42,10 +42,14 @@ def _get_embedding_model() -> KUREEmbeddingWrapper:
     return _embedding_model
 
 
-async def retrieve_evidence(metrics: dict, session: dict, top_k: int = 5) -> list[dict]:
+async def retrieve_evidence(
+    metrics: dict,
+    session: dict,
+    top_k: int = 5,
+    embedding_model: KUREEmbeddingWrapper | None = None,
+) -> list[dict]:
     """Bedrock 파이프라인용 간편 검색 함수. RagEvidence 대신 dict 목록 반환."""
     from sqlalchemy.ext.asyncio import AsyncSession
-    from app.storage.db import get_session
     from app.config import settings
 
     age_months = session.get("patient_age_months", 0)
@@ -61,7 +65,7 @@ async def retrieve_evidence(metrics: dict, session: dict, top_k: int = 5) -> lis
         f"이 지표를 SOAP Note에 어떻게 해석하고 기록해야 하는가?"
     )
 
-    model = _get_embedding_model()
+    model = embedding_model if embedding_model is not None else _get_embedding_model()
     query_embedding = model.predict([question])[0]
 
     async with AsyncSession(get_engine()) as db_session:
