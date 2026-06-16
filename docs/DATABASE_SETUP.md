@@ -8,8 +8,8 @@ AI 서비스는 **두 개의 DB**에 접근합니다.
 
 | DB | 목적 | 접근 주체 |
 |---|---|---|
-| **AI DB** (PostgreSQL + pgvector) | `rag_chunks` 벡터 검색 테이블 | CPU Worker, LLM GPU Worker |
-| **BE RDS** (PostgreSQL) | `transcripts`, `transcript_segments`, `analysis_jobs` | ML GPU Worker |
+| **AI DB** (PostgreSQL + pgvector) | `rag_chunks` 벡터 검색 테이블 | CPU Worker (리포트 파이프라인 RAG 검색), Batch Worker (RAG ingest) |
+| **BE RDS** (PostgreSQL) | `transcripts`, `transcript_segments`, `analysis_jobs` | ML GPU Worker, CPU Worker (리포트 저장) |
 
 ```
 코드 구현 완료 (직접 건드릴 필요 없음)

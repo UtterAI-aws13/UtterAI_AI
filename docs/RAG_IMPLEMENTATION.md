@@ -60,9 +60,16 @@ pymupdf가 설치되지 않으면 pdfplumber로 자동 폴백하며, 둘 다 없
 uv add pymupdf   # 권장
 ```
 
-### 3.4 로컬 인제스트 스크립트
+### 3.4 인제스트 스크립트
 
-`scripts/ingest_rag_docs.py`는 **로컬 전용** 스크립트입니다. dev/prod에서는 SQS 기반 `rag_ingest_worker.py`를 사용합니다.
+`scripts/ingest_rag_docs.py`는 `APP_ENV` 값에 따라 두 가지 모드로 동작합니다.
+
+| `APP_ENV` | 동작 |
+|---|---|
+| `local` | docs/ 파일을 직접 pgvector에 ingest |
+| `dev` / `prod` | docs/ 파일을 S3에 업로드 후 SQS 메시지 발행 → `rag_ingest_worker`(batch-worker)가 처리 |
+
+`--force` 옵션을 사용하면 S3에 이미 존재하는 파일도 SQS에 재발행합니다.
 
 **스캔 대상 디렉토리**
 
