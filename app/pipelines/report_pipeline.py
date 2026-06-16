@@ -171,7 +171,12 @@ def _compute_metrics_from_segments(segments: list[dict]) -> dict:
     }
 
 
-async def run_bedrock_report_stage(message: "ReportJobMessage", retriever, db) -> None:
+async def run_bedrock_report_stage(
+    message: "ReportJobMessage",
+    retriever,
+    db,
+    embedding_model=None,
+) -> None:
     """transcript_segments를 RDS에서 읽어 RAG + Bedrock Claude로 리포트를 생성하고 저장한다."""
     from loguru import logger
     from app.schemas.job import ReportJobMessage  # noqa: F401 (type hint)
@@ -215,6 +220,7 @@ async def run_bedrock_report_stage(message: "ReportJobMessage", retriever, db) -
         evidence = await retrieve_evidence(
             metrics=metrics,
             session=session,
+            embedding_model=embedding_model,
         )
 
         logger.info(f"[{job_id}] REPORT STAGE: BEDROCK (evidence={len(evidence)})")

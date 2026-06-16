@@ -23,9 +23,6 @@ from app.pipelines.analysis_pipeline import run_cpu_stage, CPUModels
 from app.pipelines.report_pipeline import run_bedrock_report_stage
 from app.models.vad_silero import SileroVADWrapper
 from app.models.embedding_kure import KUREEmbeddingWrapper
-from app.rag.vector_store import VectorStore
-from app.rag.retriever import Retriever
-from app.storage.db import get_engine
 from app.storage.rds import get_be_engine
 
 
@@ -102,14 +99,10 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
                 msg = ReportJobMessage(**body)
 
                 async def _run():
-                    async with AsyncSession(get_engine()) as rag_session:
-                        async with AsyncSession(get_be_engine()) as be_session:
-                            vector_store = VectorStore(rag_session)
-                            retriever = Retriever(
-                                vector_store, embedding,
-                                settings.rag_top_k, settings.rag_score_threshold,
-                            )
-                            await run_bedrock_report_stage(msg, retriever, be_session)
+                    async with AsyncSession(get_be_engine()) as be_session:
+                        await run_bedrock_report_stage(
+                            msg, None, be_session, embedding_model=embedding
+                        )
 
                 asyncio.run(_run())
                 sqs.delete_message(
@@ -117,9 +110,9 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
                     ReceiptHandle=receipt_handle,
                 )
                 logger.info(f"REPORT STAGE 완료: job_id={body.get('job_id')}")
-        except Exception as e:
+        except BaseException as e:
             record_stage_failure("cpu-worker", "report")
-            logger.error(f"REPORT STAGE 실패: {e}")
+            logger.exception(f"REPORT STAGE 실패: {e}")
 
 
 def start_worker() -> None:

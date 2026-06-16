@@ -4,6 +4,7 @@
 # rag_chunks 테이블의 embedding 컬럼에 벡터 검색을 적용한다
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 from app.config import settings
 
 _engine = None
@@ -15,6 +16,7 @@ def get_engine():
         _engine = create_async_engine(
             settings.database_url,
             connect_args={"sslmode": ssl_mode},
+            poolclass=NullPool,
         )
     return _engine
 
