@@ -17,19 +17,21 @@
 ```
 원본 음성
   → [CPU Worker]      전처리(ffmpeg) + VAD(Silero) → S3(WAV, VAD JSON)
+                      → gpu-inference-queue 발행
   → [ML GPU Worker]   화자 분리(pyannote) + STT(Whisper) + 정렬(alignment)
                       → transcript draft S3 저장 + RDS(transcripts, transcript_segments) 저장
                       → analysis_jobs.status = COMPLETED
-  → [LLM GPU Worker]  지표 계산 + RAG 검색 + SOAP Note 생성(Bedrock/EXAONE)
-                      → S3(report JSON)
+                      → report-analysis-queue 발행
+  → [CPU Worker]      RAG 검색 + SOAP Note 생성(Bedrock Claude)
+                      → S3(report JSON) + RDS 저장
 ```
 
 각 단계는 SQS 큐로 연결된 독립 Worker Pod로 실행됩니다.
 
 > **단계별 책임 요약**
-> - CPU Worker: 전처리 + VAD → `SQS GPU Inference Queue` 발행
-> - ML GPU Worker: 화자분리 + ASR + **alignment + transcript draft 저장(S3+RDS)** → `analysis_jobs.status=COMPLETED`
-> - LLM GPU Worker: 지표 계산 + RAG + 리포트 생성 → S3 저장 (별도 흐름, transcript와 독립)
+> - CPU Worker: 전처리 + VAD → `SQS GPU Inference Queue` 발행 (preprocess 스레드)
+> - ML GPU Worker: 화자분리 + ASR + **alignment + transcript draft 저장(S3+RDS)** → `report-analysis-queue` 발행
+> - CPU Worker: RAG 검색 + Bedrock 리포트 생성 → S3/RDS 저장 (report 데몬 스레드)
 
 ## AI 모델 구성
 
@@ -40,10 +42,10 @@
 | STT | `openai/whisper-large-v3-turbo` | ML GPU | |
 | 형태소 분석 | `kiwipiepy` | CPU | RAG 키워드 추출 |
 | 임베딩 | `nlpai-lab/KURE-v1` | CPU | 1024차원 |
-| 리포트 생성 | AWS Bedrock Claude Haiku | LLM GPU | `bedrock_client.py` |
-| LLM (로컬 대안) | `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct` | LLM GPU | `llm_exaone.py` |
+| 리포트 생성 | AWS Bedrock Claude Haiku | CPU | `bedrock_client.py` (API 호출, GPU 불필요) |
+| LLM (로컬 대안) | `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct` | - | `llm_exaone.py` (미사용, 보존) |
 
-> 현재 운영 파이프라인은 Bedrock Claude를 사용합니다. EXAONE은 로컬/오프라인 대안으로 유지합니다.
+> 현재 운영 파이프라인은 Bedrock Claude를 사용합니다. Bedrock는 API 호출이므로 GPU 없이 CPU Worker에서 처리합니다.
 
 ## 폴더 구조
 
@@ -63,7 +65,7 @@ app/
 ├── metrics/           언어 지표 순수 함수 (mlu, lexical_diversity, response_latency)
 ├── rag/               RAG 파이프라인 (ingest → pgvector, LangGraph query)
 ├── api/               FastAPI 라우터 (health, jobs, rag)
-├── workers/           SQS 폴링 Worker (cpu, ml_gpu, llm_gpu, rag_ingest)
+├── workers/           SQS 폴링 Worker (cpu, ml_gpu, rag_ingest)
 ├── storage/           S3 클라이언트, PostgreSQL async 연결
 ├── mocks/             로컬 테스트용 mock 데이터
 └── utils/             오디오 유틸, ID 생성 유틸
@@ -79,13 +81,14 @@ app/
 | `AWS_REGION` | AWS 리전 |
 | `S3_BUCKET_AUDIO` | 오디오 버킷 |
 | `S3_BUCKET_REPORT` | 결과 리포트 버킷 |
-| `DB_*` | AI PostgreSQL(pgvector) 접속 정보 |
-| `BE_DB_*` | BE RDS 접속 정보 (ML GPU Worker 전용 — `transcripts` / `analysis_jobs` 쓰기) |
-| `SQS_AUDIO_PREPROCESS_QUEUE_URL` | CPU Worker 입력 큐 |
+| `DB_*` | AI PostgreSQL(pgvector) 접속 정보 (CPU Worker RAG 검색, Batch Worker ingest) |
+| `BE_DB_*` | BE RDS 접속 정보 (ML GPU Worker — transcript 저장, CPU Worker — 리포트 저장) |
+| `SQS_AUDIO_PREPROCESS_QUEUE_URL` | CPU Worker 입력 큐 (전처리) |
 | `SQS_GPU_INFERENCE_QUEUE_URL` | ML GPU Worker 입력 큐 |
-| `SQS_REPORT_ANALYSIS_QUEUE_URL` | LLM GPU Worker 입력 큐 |
+| `SQS_REPORT_ANALYSIS_QUEUE_URL` | CPU Worker 입력 큐 (리포트 생성) |
 | `BEDROCK_REPORT_MODEL_ID` | Bedrock 모델 ID |
-| `WORKER_TYPE` | Pod에서 주입 (`cpu` / `ml-gpu` / `llm-gpu`) |
+| `BEDROCK_REGION` | Bedrock API 리전 |
+| `WORKER_TYPE` | Pod에서 주입 (`cpu` / `ml-gpu`) |
 
 ## 데모 실행 (권장)
 
@@ -149,7 +152,7 @@ python scripts/run_ml_gpu_worker.py
 | `scripts/dev_run.py --audio file.wav` | SQS/S3 없이 전체 파이프라인 로컬 실행 |
 | `scripts/test_models.py --audio file.wav` | VAD + 화자분리 + ASR 단독 테스트 |
 | `scripts/test_pipeline.py` | Mock 데이터로 Bedrock SOAP Note 생성 테스트 |
-| `scripts/ingest_rag_docs.py` | `docs/rag/*.txt` + `docs/papers/*.pdf` 스캔 → pgvector 인제스트 (로컬 전용) |
+| `scripts/ingest_rag_docs.py` | `docs/rag/*.txt` + `docs/papers/*.pdf` 스캔 → 로컬: pgvector 직접 ingest / dev·prod: S3+SQS 발행 |
 
 ## API 엔드포인트
 
@@ -177,9 +180,9 @@ CPU Worker와 GPU Worker를 EKS에서 분리 배포합니다.
 
 | Worker | 담당 | 인스턴스 |
 |---|---|---|
-| CPU Worker | VAD, KURE 임베딩, RAG ingest | c5.xlarge |
-| ML GPU Worker | pyannote 화자 분리, Whisper STT | g4dn.xlarge (T4) |
-| LLM GPU Worker | EXAONE (또는 Bedrock 클라이언트) | g5.xlarge (A10G) |
+| CPU Worker | 전처리 + VAD, KURE 임베딩, RAG 검색, Bedrock 리포트 생성 | c5.xlarge |
+| ML GPU Worker | pyannote 화자 분리, Whisper STT, transcript 저장 | g4dn.xlarge (T4) |
+| Batch Worker | RAG 문서 ingest (S3 → pgvector) | c5.large |
 
 ## 운영 원칙
 
