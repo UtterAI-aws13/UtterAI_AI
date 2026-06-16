@@ -70,7 +70,7 @@ class Settings(BaseSettings):
 
     # Bedrock
     bedrock_region: str = "ap-northeast-2"
-    bedrock_report_model_id: str = "anthropic.claude-haiku-4-5-20251001-v1:0"
+    bedrock_report_model_id: str = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 
     # 모델 이름 - Hugging Face Hub ID
     vad_model_name: str = "onnx-community/silero-vad"
