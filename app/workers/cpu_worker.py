@@ -1,13 +1,16 @@
 # CPU Worker
-# utterai-dev-audio-preprocess-queue 폴링
+# utterai-dev-audio-preprocess-queue, utterai-dev-report-analysis-queue 폴링
 # 로드 모델: Silero VAD, KURE-v1 embedding
 # 담당 단계: 전처리 + VAD → S3 저장 → gpu-inference-queue 발행
+#           RAG 검색 + Bedrock Claude 리포트 생성 → RDS 저장
 import asyncio
 import json
+import threading
 
 import boto3
 from loguru import logger
 from opentelemetry import trace
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.observability.otel import initialize_observability
@@ -15,9 +18,15 @@ from app.observability.metrics import record_sqs_receive
 from app.observability.metrics import record_stage_failure
 from app.observability.sqs import extract_context_from_message_attributes
 from app.schemas import JobMessage
+from app.schemas.job import ReportJobMessage
 from app.pipelines.analysis_pipeline import run_cpu_stage, CPUModels
+from app.pipelines.report_pipeline import run_bedrock_report_stage
 from app.models.vad_silero import SileroVADWrapper
 from app.models.embedding_kure import KUREEmbeddingWrapper
+from app.rag.vector_store import VectorStore
+from app.rag.retriever import Retriever
+from app.storage.db import get_engine
+from app.storage.rds import get_be_engine
 
 
 def _load_models() -> CPUModels:
@@ -32,12 +41,8 @@ def _load_models() -> CPUModels:
     return CPUModels(vad=vad, embedding=embedding)
 
 
-def start_worker() -> None:
-    initialize_observability()
-    sqs = boto3.client("sqs", region_name=settings.aws_region)
-    models = _load_models()
+def _run_preprocess_loop(sqs, models: CPUModels) -> None:
     logger.info(f"CPU Worker 시작. 큐: {settings.sqs_audio_preprocess_queue_url}")
-
     while True:
         response = sqs.receive_message(
             QueueUrl=settings.sqs_audio_preprocess_queue_url,
@@ -69,6 +74,67 @@ def start_worker() -> None:
         except Exception as e:
             record_stage_failure("cpu-worker", "message")
             logger.error(f"CPU STAGE 실패: {e}")
+
+
+def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
+    logger.info(f"Report Worker 시작. 큐: {settings.sqs_report_analysis_queue_url}")
+    while True:
+        response = sqs.receive_message(
+            QueueUrl=settings.sqs_report_analysis_queue_url,
+            MaxNumberOfMessages=1,
+            WaitTimeSeconds=20,
+            VisibilityTimeout=600,
+            MessageAttributeNames=["All"],
+        )
+        messages = response.get("Messages", [])
+        if not messages:
+            continue
+
+        raw = messages[0]
+        receipt_handle = raw["ReceiptHandle"]
+        body = json.loads(raw["Body"])
+        message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
+
+        try:
+            tracer = trace.get_tracer(__name__)
+            with tracer.start_as_current_span("worker.report.message", context=message_context):
+                record_sqs_receive("cpu-worker-report")
+                msg = ReportJobMessage(**body)
+
+                async def _run():
+                    async with AsyncSession(get_engine()) as rag_session:
+                        async with AsyncSession(get_be_engine()) as be_session:
+                            vector_store = VectorStore(rag_session)
+                            retriever = Retriever(
+                                vector_store, embedding,
+                                settings.rag_top_k, settings.rag_score_threshold,
+                            )
+                            await run_bedrock_report_stage(msg, retriever, be_session)
+
+                asyncio.run(_run())
+                sqs.delete_message(
+                    QueueUrl=settings.sqs_report_analysis_queue_url,
+                    ReceiptHandle=receipt_handle,
+                )
+                logger.info(f"REPORT STAGE 완료: job_id={body.get('job_id')}")
+        except Exception as e:
+            record_stage_failure("cpu-worker", "report")
+            logger.error(f"REPORT STAGE 실패: {e}")
+
+
+def start_worker() -> None:
+    initialize_observability()
+    sqs = boto3.client("sqs", region_name=settings.aws_region)
+    models = _load_models()
+
+    report_thread = threading.Thread(
+        target=_run_report_loop,
+        args=(sqs, models.embedding),
+        daemon=True,
+    )
+    report_thread.start()
+
+    _run_preprocess_loop(sqs, models)
 
 
 if __name__ == "__main__":
