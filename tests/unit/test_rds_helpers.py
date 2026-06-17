@@ -5,8 +5,8 @@ SQL 텍스트와 파라미터 바인딩이 올바른지, 그리고 terminal stat
 completed_at이 설정되는지 검증한다.
 """
 import uuid
-from datetime import datetime, UTC
-from unittest.mock import AsyncMock, MagicMock, call, patch
+from datetime import datetime
+from unittest.mock import AsyncMock
 
 import pytest
 
