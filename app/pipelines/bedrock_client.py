@@ -2,6 +2,7 @@ import json
 import re
 
 import boto3
+from loguru import logger
 
 from app.config import settings
 
@@ -11,11 +12,15 @@ _client = None
 def get_bedrock_client():
     global _client
     if _client is None:
+        logger.info(f"[bedrock] client 초기화 region={settings.bedrock_region}")
         _client = boto3.client("bedrock-runtime", region_name=settings.bedrock_region)
     return _client
 
 
 def invoke_claude(prompt: str, max_tokens: int = 2048) -> dict:
+    model_id = settings.bedrock_report_model_id
+    logger.info(f"[bedrock] invoke_claude 시작 model_id={model_id} prompt_len={len(prompt)}")
+
     body = {
         "anthropic_version": "bedrock-2023-05-31",
         "max_tokens": max_tokens,
@@ -23,14 +28,27 @@ def invoke_claude(prompt: str, max_tokens: int = 2048) -> dict:
         "messages": [{"role": "user", "content": prompt}],
     }
 
-    response = get_bedrock_client().invoke_model(
-        modelId=settings.bedrock_report_model_id,
-        body=json.dumps(body),
-        contentType="application/json",
-        accept="application/json",
-    )
+    try:
+        response = get_bedrock_client().invoke_model(
+            modelId=model_id,
+            body=json.dumps(body),
+            contentType="application/json",
+            accept="application/json",
+        )
+        logger.info(f"[bedrock] invoke_model 응답 수신 model_id={model_id}")
+    except Exception as exc:
+        logger.error(f"[bedrock] invoke_model 실패 model_id={model_id} error={exc}")
+        raise
 
-    text = json.loads(response["body"].read())["content"][0]["text"]
+    try:
+        raw_body = response["body"].read()
+        parsed = json.loads(raw_body)
+        text = parsed["content"][0]["text"]
+        logger.info(f"[bedrock] 응답 파싱 완료 text_len={len(text)}")
+    except Exception as exc:
+        logger.error(f"[bedrock] 응답 파싱 실패 error={exc}")
+        raise
+
     return _parse_json(text)
 
 

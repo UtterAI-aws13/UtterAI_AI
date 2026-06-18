@@ -194,14 +194,19 @@ async def run_bedrock_report_stage(
     transcript_id = message.transcript_id
 
     try:
-        logger.info(f"[{job_id}] REPORT STAGE: LOADING TRANSCRIPT")
+        logger.info(f"[{job_id}] REPORT STAGE: LOADING TRANSCRIPT transcript_id={transcript_id}")
         segments = await get_transcript_segments(db, transcript_id)
+        logger.info(f"[{job_id}] REPORT STAGE: TRANSCRIPT LOADED segments={len(segments)}")
+        if not segments:
+            logger.warning(f"[{job_id}] REPORT STAGE: transcript_segments 비어있음 — transcript_id={transcript_id}")
 
         logger.info(f"[{job_id}] REPORT STAGE: COMPUTING METRICS ({len(segments)} segments)")
         metrics = _compute_metrics_from_segments(segments)
+        logger.debug(f"[{job_id}] REPORT STAGE: metrics={metrics}")
 
         logger.info(f"[{job_id}] REPORT STAGE: LOADING SESSION CONTEXT")
         session_ctx = await get_session_context(db, session_id)
+        logger.debug(f"[{job_id}] REPORT STAGE: session_ctx={session_ctx}")
         session = {
             "session_id": session_id,
             "job_id": job_id,
@@ -218,22 +223,28 @@ async def run_bedrock_report_stage(
             for s in segments
             if s.get("text")
         ]
+        logger.info(
+            f"[{job_id}] REPORT STAGE: utterances patient={len(patient_utterances)} all={len(all_utterances)}"
+        )
 
-        logger.info(f"[{job_id}] REPORT STAGE: RAG")
+        logger.info(f"[{job_id}] REPORT STAGE: RAG 시작")
         evidence = await retrieve_evidence(
             metrics=metrics,
             session=session,
             embedding_model=embedding_model,
         )
+        logger.info(f"[{job_id}] REPORT STAGE: RAG 완료 evidence={len(evidence)}")
 
-        logger.info(f"[{job_id}] REPORT STAGE: BEDROCK (evidence={len(evidence)})")
+        logger.info(f"[{job_id}] REPORT STAGE: BEDROCK 호출 시작 model={settings.bedrock_report_model_id}")
         prompt = build_bedrock_report_prompt(
             metrics=metrics,
             utterances=patient_utterances or all_utterances,
             session=session,
             evidence=evidence,
         )
+        logger.debug(f"[{job_id}] REPORT STAGE: prompt_len={len(prompt)}")
         report_data = invoke_claude(prompt)
+        logger.info(f"[{job_id}] REPORT STAGE: BEDROCK 호출 완료 keys={list(report_data.keys())}")
 
         soap_note = report_data.get("soap_note", {})
         clinical_flags = report_data.get("clinical_flags", [])
@@ -253,7 +264,7 @@ async def run_bedrock_report_stage(
         logger.info(f"[{job_id}] REPORT STAGE: DONE")
 
     except Exception as exc:
-        logger.error(f"[{job_id}] REPORT STAGE 실패: {exc}")
+        logger.exception(f"[{job_id}] REPORT STAGE 실패: {exc}")
         await update_session_status(db, session_id, "FAILED")
         raise
 

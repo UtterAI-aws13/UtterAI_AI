@@ -76,13 +76,18 @@ def _run_preprocess_loop(sqs, models: CPUModels) -> None:
 def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
     logger.info(f"Report Worker 시작. 큐: {settings.sqs_report_analysis_queue_url}")
     while True:
-        response = sqs.receive_message(
-            QueueUrl=settings.sqs_report_analysis_queue_url,
-            MaxNumberOfMessages=1,
-            WaitTimeSeconds=20,
-            VisibilityTimeout=600,
-            MessageAttributeNames=["All"],
-        )
+        try:
+            response = sqs.receive_message(
+                QueueUrl=settings.sqs_report_analysis_queue_url,
+                MaxNumberOfMessages=1,
+                WaitTimeSeconds=20,
+                VisibilityTimeout=600,
+                MessageAttributeNames=["All"],
+            )
+        except Exception as e:
+            logger.error(f"[report-loop] SQS receive_message 실패: {e}")
+            continue
+
         messages = response.get("Messages", [])
         if not messages:
             continue
@@ -90,6 +95,8 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
         raw = messages[0]
         receipt_handle = raw["ReceiptHandle"]
         body = json.loads(raw["Body"])
+        job_id = body.get("job_id", "unknown")
+        logger.info(f"[report-loop] 메시지 수신 job_id={job_id} transcript_id={body.get('transcript_id')}")
         message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
 
         try:
@@ -97,6 +104,8 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
             with tracer.start_as_current_span("worker.report.message", context=message_context):
                 record_sqs_receive("cpu-worker-report")
                 msg = ReportJobMessage(**body)
+
+                logger.info(f"[report-loop] BE DB 세션 열기 job_id={job_id}")
 
                 async def _run():
                     async with AsyncSession(get_be_engine()) as be_session:
@@ -109,10 +118,10 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
                     QueueUrl=settings.sqs_report_analysis_queue_url,
                     ReceiptHandle=receipt_handle,
                 )
-                logger.info(f"REPORT STAGE 완료: job_id={body.get('job_id')}")
+                logger.info(f"[report-loop] REPORT STAGE 완료 job_id={job_id}")
         except BaseException as e:
             record_stage_failure("cpu-worker", "report")
-            logger.exception(f"REPORT STAGE 실패: {e}")
+            logger.exception(f"[report-loop] REPORT STAGE 실패 job_id={job_id}: {e}")
 
 
 def start_worker() -> None:
