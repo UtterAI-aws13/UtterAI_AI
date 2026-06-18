@@ -220,6 +220,13 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> 
                 logger.info(f"[{job_id}] utterances={len(utterances)}")
 
                 # step 13: transcript draft → S3 + RDS
+                # 처리 중 취소된 경우 DB 저장을 건너뛴다.
+                # save 전에 다시 확인하지 않으면 CANCELLED 상태를 덮어써 세션이 오염된다.
+                recheck_status = await get_analysis_job_status(db, job_id)
+                if recheck_status == "CANCELLED":
+                    logger.info(f"[{job_id}] ML GPU STAGE: job cancelled during processing, skipping save")
+                    return
+
                 logger.info(f"[{job_id}] ML GPU STAGE: SAVING TRANSCRIPT DRAFT")
                 draft_key = f"transcript-drafts/{session_id}/{job_id}/transcript_draft.json"
                 draft_path = str(tmp / "transcript_draft.json")
