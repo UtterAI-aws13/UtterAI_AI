@@ -41,13 +41,18 @@ def _load_models() -> CPUModels:
 def _run_preprocess_loop(sqs, models: CPUModels) -> None:
     logger.info(f"CPU Worker 시작. 큐: {settings.sqs_audio_preprocess_queue_url}")
     while True:
-        response = sqs.receive_message(
-            QueueUrl=settings.sqs_audio_preprocess_queue_url,
-            MaxNumberOfMessages=1,
-            WaitTimeSeconds=20,
-            VisibilityTimeout=300,
-            MessageAttributeNames=["All"],
-        )
+        try:
+            response = sqs.receive_message(
+                QueueUrl=settings.sqs_audio_preprocess_queue_url,
+                MaxNumberOfMessages=1,
+                WaitTimeSeconds=20,
+                VisibilityTimeout=300,
+                MessageAttributeNames=["All"],
+            )
+        except Exception as e:
+            logger.error(f"[cpu-worker] SQS receive_message 실패: {e}")
+            continue
+
         messages = response.get("Messages", [])
         if not messages:
             continue
@@ -119,7 +124,7 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
                     ReceiptHandle=receipt_handle,
                 )
                 logger.info(f"[report-loop] REPORT STAGE 완료 job_id={job_id}")
-        except BaseException as e:
+        except Exception as e:
             record_stage_failure("cpu-worker", "report")
             logger.exception(f"[report-loop] REPORT STAGE 실패 job_id={job_id}: {e}")
 

@@ -53,7 +53,9 @@ async def retrieve_evidence(
     from app.config import settings
 
     age_months = session.get("patient_age_months", 0)
-    mlu = metrics.get("mlu_morpheme", 0)
+    # report_pipeline._compute_metrics_from_segments는 mlu_word 키로 저장한다.
+    # 이전 코드가 mlu_morpheme을 읽어 항상 0이 되던 버그를 수정한다.
+    mlu = metrics.get("mlu_word", metrics.get("mlu_morpheme", 0))
     ttr = metrics.get("ttr", 0)
     ndw = metrics.get("ndw", 0)
     latency = metrics.get("avg_response_latency_sec", 0)

@@ -251,6 +251,7 @@ async def run_bedrock_report_stage(
         evidence_chunk_ids = [e.get("chunk_id", "") for e in evidence if isinstance(e, dict)]
 
         logger.info(f"[{job_id}] REPORT STAGE: SAVING")
+        report_saved = False
         await save_report(
             db=db,
             job_id=job_id,
@@ -260,12 +261,30 @@ async def run_bedrock_report_stage(
             evidence_chunk_ids=evidence_chunk_ids,
             model_used=settings.bedrock_report_model_id,
         )
+        report_saved = True
         await update_session_status(db, session_id, "REPORT_READY")
         logger.info(f"[{job_id}] REPORT STAGE: DONE")
 
     except Exception as exc:
         logger.exception(f"[{job_id}] REPORT STAGE 실패: {exc}")
-        await update_session_status(db, session_id, "FAILED")
+        # save_report가 이미 커밋된 경우 세션을 FAILED로 바꾸면 리포트와 상태가 불일치한다.
+        # 이 경우 세션을 REPORT_READY로 재시도하고, 그것도 실패하면 stuck 위험을 로그로 남긴다.
+        if report_saved:
+            try:
+                await update_session_status(db, session_id, "REPORT_READY")
+                logger.info(f"[{job_id}] 재시도로 REPORT_READY 상태 업데이트 완료")
+            except Exception as retry_exc:
+                logger.error(
+                    f"[{job_id}] REPORT_READY 상태 업데이트 재시도 실패 — "
+                    f"세션 REPORT_GENERATING stuck 위험: {retry_exc}"
+                )
+        else:
+            try:
+                await update_session_status(db, session_id, "FAILED")
+            except Exception as status_exc:
+                # 상태 업데이트 실패 시 세션이 REPORT_GENERATING에 영구 stuck되는 것을 방지하기 위해
+                # 별도 로그를 남긴다. raise는 여전히 실행돼 SQS 메시지가 재처리될 수 있게 한다.
+                logger.error(f"[{job_id}] FAILED 상태 업데이트 실패 (세션 stuck 위험): {status_exc}")
         raise
 
 
