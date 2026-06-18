@@ -18,9 +18,6 @@ from app.observability.sqs import extract_context_from_message_attributes
 from app.schemas.job import ReportJobMessage
 from app.pipelines.report_pipeline import run_bedrock_report_stage
 from app.models.embedding_kure import KUREEmbeddingWrapper
-from app.rag.vector_store import VectorStore
-from app.rag.retriever import Retriever
-from app.storage.db import get_engine
 from app.storage.rds import get_be_engine
 
 
@@ -38,13 +35,18 @@ def start_worker() -> None:
     logger.info(f"LLM GPU Worker 시작. 큐: {settings.sqs_report_analysis_queue_url}")
 
     while True:
-        response = sqs.receive_message(
-            QueueUrl=settings.sqs_report_analysis_queue_url,
-            MaxNumberOfMessages=1,
-            WaitTimeSeconds=20,
-            VisibilityTimeout=600,
-            MessageAttributeNames=["All"],
-        )
+        try:
+            response = sqs.receive_message(
+                QueueUrl=settings.sqs_report_analysis_queue_url,
+                MaxNumberOfMessages=1,
+                WaitTimeSeconds=20,
+                VisibilityTimeout=600,
+                MessageAttributeNames=["All"],
+            )
+        except Exception as e:
+            logger.error(f"[llm-gpu-worker] SQS receive_message 실패: {e}")
+            continue
+
         messages = response.get("Messages", [])
         if not messages:
             continue
@@ -61,14 +63,12 @@ def start_worker() -> None:
                 msg = ReportJobMessage(**body)
 
                 async def _run():
-                    async with AsyncSession(get_engine()) as rag_session:
-                        async with AsyncSession(get_be_engine()) as be_session:
-                            vector_store = VectorStore(rag_session)
-                            retriever = Retriever(
-                                vector_store, embedding,
-                                settings.rag_top_k, settings.rag_score_threshold,
-                            )
-                            await run_bedrock_report_stage(msg, retriever, be_session)
+                    async with AsyncSession(get_be_engine()) as be_session:
+                        # retriever 파라미터는 run_bedrock_report_stage 내부에서 사용되지 않는다.
+                        # embedding_model 키워드 인자로 직접 전달해야 retrieve_evidence가 올바른 모델을 쓴다.
+                        await run_bedrock_report_stage(
+                            msg, None, be_session, embedding_model=embedding
+                        )
 
                 asyncio.run(_run())
                 sqs.delete_message(

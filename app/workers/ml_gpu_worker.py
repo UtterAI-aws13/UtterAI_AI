@@ -45,13 +45,18 @@ def start_worker() -> None:
     logger.info(f"ML GPU Worker 시작. 큐: {settings.sqs_gpu_inference_queue_url}")
 
     while True:
-        response = sqs.receive_message(
-            QueueUrl=settings.sqs_gpu_inference_queue_url,
-            MaxNumberOfMessages=1,
-            WaitTimeSeconds=20,
-            VisibilityTimeout=600,
-            MessageAttributeNames=["All"],
-        )
+        try:
+            response = sqs.receive_message(
+                QueueUrl=settings.sqs_gpu_inference_queue_url,
+                MaxNumberOfMessages=1,
+                WaitTimeSeconds=20,
+                VisibilityTimeout=600,
+                MessageAttributeNames=["All"],
+            )
+        except Exception as e:
+            logger.error(f"[ml-gpu-worker] SQS receive_message 실패: {e}")
+            continue
+
         messages = response.get("Messages", [])
         if not messages:
             continue
