@@ -245,6 +245,16 @@ async def update_session_status(
     await db.commit()
 
 
+async def get_analysis_job_status(db: AsyncSession, job_id: str) -> str | None:
+    """analysis_jobs.status를 조회한다."""
+    result = await db.execute(
+        text("SELECT status FROM analysis_jobs WHERE id = CAST(:job_id AS uuid)"),
+        {"job_id": job_id},
+    )
+    row = result.first()
+    return row[0] if row else None
+
+
 async def update_analysis_job_status(
     db: AsyncSession,
     job_id: str,
@@ -253,7 +263,7 @@ async def update_analysis_job_status(
     error_code: str | None = None,
     error_message: str | None = None,
 ) -> None:
-    """analysis_jobs.status와 관련 필드를 갱신한다."""
+    """analysis_jobs.status와 관련 필드를 갱신한다. CANCELLED 상태는 덮어쓰지 않는다."""
     completed_at = datetime.now(UTC) if status in _TERMINAL_STATUSES else None
 
     await db.execute(
@@ -265,6 +275,7 @@ async def update_analysis_job_status(
                 error_message   = :error_message,
                 completed_at    = :completed_at
             WHERE id = CAST(:job_id AS uuid)
+              AND status != 'CANCELLED'
         """),
         {
             "status": status,

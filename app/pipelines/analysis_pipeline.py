@@ -30,7 +30,12 @@ from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.models.llm_exaone import EXAONEWrapper
 from app.rag.retriever import Retriever
 from app.storage import s3_client
-from app.storage.rds import save_transcript_draft, update_analysis_job_status, update_session_status
+from app.storage.rds import (
+    get_analysis_job_status,
+    save_transcript_draft,
+    update_analysis_job_status,
+    update_session_status,
+)
 from app.config import settings
 from app.observability.metrics import record_sqs_publish, record_stage_duration
 from app.observability.sqs import build_message_attributes_from_current_context
@@ -149,6 +154,12 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> 
     session_id = message.session_id
     with tracer.start_as_current_span("worker.ml_gpu.pipeline") as span:
         span.set_attribute("job.id", job_id)
+
+        current_status = await get_analysis_job_status(db, job_id)
+        if current_status == "CANCELLED":
+            logger.info(f"[{job_id}] ML GPU STAGE: job was cancelled, skipping")
+            return
+
         try:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 tmp = Path(tmp_dir)
