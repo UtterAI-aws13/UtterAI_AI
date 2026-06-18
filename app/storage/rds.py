@@ -14,20 +14,17 @@ from sqlalchemy.pool import NullPool
 
 from app.schemas.transcript import Utterance
 
-_be_engine = None
-
-
 def get_be_engine():
-    global _be_engine
-    if _be_engine is None:
-        from app.config import settings
-        ssl_mode = "disable" if settings.app_env == "local" else "require"
-        _be_engine = create_async_engine(
-            settings.be_database_url,
-            connect_args={"sslmode": ssl_mode},
-            poolclass=NullPool,
-        )
-    return _be_engine
+    # db.py의 get_engine()과 동일한 이유로 싱글톤을 사용하지 않는다.
+    # asyncio.run()마다 새 이벤트 루프가 생성/소멸되므로
+    # 싱글톤 AsyncEngine을 재사용하면 두 번째 메시지부터 닫힌 루프를 참조해 hang/error가 발생한다.
+    from app.config import settings
+    ssl_mode = "disable" if settings.app_env == "local" else "require"
+    return create_async_engine(
+        settings.be_database_url,
+        connect_args={"sslmode": ssl_mode},
+        poolclass=NullPool,
+    )
 
 _TERMINAL_STATUSES = {"COMPLETED", "FAILED"}
 

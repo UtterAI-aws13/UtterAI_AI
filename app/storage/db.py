@@ -7,18 +7,17 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
 from app.config import settings
 
-_engine = None
-
 def get_engine():
-    global _engine
-    if _engine is None:
-        ssl_mode = "disable" if settings.app_env == "local" else "require"
-        _engine = create_async_engine(
-            settings.database_url,
-            connect_args={"sslmode": ssl_mode},
-            poolclass=NullPool,
-        )
-    return _engine
+    # NullPool 환경에서는 엔진 객체 자체가 이벤트 루프에 종속된 상태를 가질 수 있다.
+    # asyncio.run()은 호출마다 새 루프를 만들고 닫으므로, 싱글톤 엔진을 재사용하면
+    # 두 번째 메시지부터 닫힌 루프를 바라보다 hang/error가 발생한다.
+    # NullPool에서 엔진 생성 비용은 커넥션 비용과 무관하게 매우 저렴하므로 매번 생성한다.
+    ssl_mode = "disable" if settings.app_env == "local" else "require"
+    return create_async_engine(
+        settings.database_url,
+        connect_args={"sslmode": ssl_mode},
+        poolclass=NullPool,
+    )
 
 
 class Base(DeclarativeBase):
