@@ -10,6 +10,7 @@
 import json
 import re
 import uuid
+from typing import TYPE_CHECKING
 
 from app.schemas import (
     Utterance, SpeakerMetrics, RagResult, ReportDraft,
@@ -19,6 +20,9 @@ from app.rag.prompt_templates import build_report_prompt
 from app.config import settings
 
 MAX_RETRIES = 3
+
+if TYPE_CHECKING:
+    from app.schemas.job import ReportJobMessage
 
 _JSON_BLOCK_RE = re.compile(r'```(?:json)?\s*([\s\S]*?)\s*```')
 _JSON_OBJECT_RE = re.compile(r'\{[\s\S]*\}')
@@ -179,7 +183,6 @@ async def run_bedrock_report_stage(
 ) -> None:
     """transcript_segments를 RDS에서 읽어 RAG + Bedrock Claude로 리포트를 생성하고 저장한다."""
     from loguru import logger
-    from app.schemas.job import ReportJobMessage  # noqa: F401 (type hint)
     from app.pipelines.bedrock_client import invoke_claude
     from app.rag.prompt_templates import build_bedrock_report_prompt
     from app.rag.retriever import retrieve_evidence
