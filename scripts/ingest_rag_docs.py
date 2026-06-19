@@ -34,6 +34,70 @@ SCAN_TARGETS = [
 
 S3_PREFIX = "documents"
 
+# 문서별 메타데이터 오버라이드.
+# scan_docs()에서 파일명으로 파싱한 document_id를 키로 조회해 ChunkMetadata를 보강한다.
+# language_area가 없으면 retrieve 시 필터가 작동하지 않아 검색 정밀도가 떨어진다.
+DOC_METADATA: dict[str, dict] = {
+    # ── 임상 가이드 (docs/rag/*.txt) ─────────────────────────────────────────
+    "doc_language_sample_metrics": {
+        "age_group": "preschool",
+        "language_area": ["expressive_language", "vocabulary", "pragmatics", "phonology"],
+        "metric": ["mlu_morpheme", "llu_morpheme", "ndw", "ntw", "ttr", "pcc"],
+        "clinical_task": ["assessment", "report_generation"],
+        "assessment_tool": ["K-ALAS"],
+    },
+    "doc_korean_morphosyntax": {
+        "age_group": "preschool",
+        "language_area": ["morphosyntax"],
+        "metric": [],
+        "clinical_task": ["assessment", "goal_writing"],
+        "assessment_tool": [],
+    },
+    "doc_adult_slp_guide": {
+        "age_group": "adult",
+        "language_area": ["expressive_language", "narrative_discourse", "motor_speech", "cognitive_communication", "clinical_documentation"],
+        "metric": ["ciu_count", "ciu_ratio", "ciu_per_minute"],
+        "clinical_task": ["assessment", "report_generation", "goal_writing"],
+        "assessment_tool": ["PK-WAB", "K-BNT"],
+    },
+    "doc_child_slp_population": {
+        "age_group": "preschool",
+        "language_area": ["pragmatics", "expressive_language", "phonology", "narrative_discourse"],
+        "metric": ["mlu_morpheme", "ndw", "ttr", "pcc"],
+        "clinical_task": ["assessment", "intervention"],
+        "assessment_tool": ["PRES", "SELSI", "U-TAP2", "APAC"],
+    },
+    "doc_child_assessment_tools": {
+        "age_group": "preschool",
+        "language_area": ["expressive_language", "receptive_language", "phonology"],
+        "metric": ["mlu_morpheme", "ndw", "pcc"],
+        "clinical_task": ["assessment"],
+        "assessment_tool": ["PRES", "SELSI", "REVT", "U-TAP2", "APAC", "K-ALAS", "LSSC", "KOPLAC"],
+    },
+    # ── 연구 논문 (docs/papers/*.pdf) ────────────────────────────────────────
+    "doc_asd_slp_subjectivity": {
+        "age_group": "preschool",
+        "language_area": ["pragmatics"],
+        "metric": [],
+        "clinical_task": ["assessment"],
+        "assessment_tool": [],
+    },
+    "doc_utterance_analysis": {
+        "age_group": "preschool",
+        "language_area": ["expressive_language"],
+        "metric": ["mlu_morpheme"],
+        "clinical_task": ["assessment"],
+        "assessment_tool": [],
+    },
+    "doc_language_sample_analysis": {
+        "age_group": "preschool",
+        "language_area": ["expressive_language"],
+        "metric": ["mlu_morpheme", "ndw", "ttr"],
+        "clinical_task": ["assessment"],
+        "assessment_tool": ["K-ALAS"],
+    },
+}
+
 
 def _parse_filename(stem: str) -> tuple[str, str]:
     if "__" in stem:
@@ -51,13 +115,17 @@ def scan_docs():
         for pattern in patterns:
             for path in sorted(directory.glob(pattern)):
                 doc_id, title = _parse_filename(path.stem)
+                overrides = DOC_METADATA.get(doc_id, {})
                 docs.append((path, source_type, ChunkMetadata(
                     document_id=doc_id,
                     chunk_id="",
                     title=title,
                     source_type=source_type,
-                    age_group="all",
-                    metric=[],
+                    age_group=overrides.get("age_group", "all"),
+                    language_area=overrides.get("language_area", []),
+                    metric=overrides.get("metric", []),
+                    clinical_task=overrides.get("clinical_task", []),
+                    assessment_tool=overrides.get("assessment_tool", []),
                 )))
     return docs
 
@@ -151,7 +219,10 @@ def ingest_remote(docs, force: bool = False):
                 "title": metadata.title,
                 "source_type": metadata.source_type,
                 "age_group": metadata.age_group or "all",
+                "language_area": metadata.language_area,
                 "metric": metadata.metric or [],
+                "clinical_task": metadata.clinical_task or [],
+                "assessment_tool": metadata.assessment_tool or [],
             },
         }
         sqs.send_message(QueueUrl=queue_url, MessageBody=json.dumps(message, ensure_ascii=False))

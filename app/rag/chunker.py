@@ -7,6 +7,22 @@ from app.schemas import RagChunk, ChunkMetadata
 # 한국어/영어 문장 끝 문자 기준 분리
 _SENTENCE_END_RE = re.compile(r'(?<=[.!?。？！])\s+')
 
+# source_type별 기본 chunk 파라미터.
+# 계산 규칙은 작게(정밀도), 논문은 크게(맥락 보존), safety_rule은 매우 작게(독립 저장).
+_CHUNK_PARAMS: dict[str, tuple[int, int]] = {
+    "scoring_rule":       (150, 30),
+    "linguistic_rule":    (200, 40),
+    "safety_rule":        (100, 20),
+    "research_paper":     (500, 80),
+    "research_abstract":  (300, 50),
+    "clinical_guide":     (300, 50),
+}
+_DEFAULT_CHUNK_PARAMS = (300, 50)
+
+
+def _chunk_params(source_type: str) -> tuple[int, int]:
+    return _CHUNK_PARAMS.get(source_type, _DEFAULT_CHUNK_PARAMS)
+
 
 def _split_sentences(text: str) -> list[str]:
     parts = _SENTENCE_END_RE.split(text.strip())
@@ -21,14 +37,17 @@ def make_chunks(
     document_id: str,
     text: str,
     metadata: ChunkMetadata,
-    chunk_size: int = 300,
-    overlap: int = 50,
+    chunk_size: int | None = None,
+    overlap: int | None = None,
 ) -> list[RagChunk]:
     """텍스트를 청크로 분할한다.
 
-    chunk_size: 청크 최대 글자 수
-    overlap: 앞 청크에서 다음 청크로 이어지는 글자 수 (문맥 보존)
+    chunk_size/overlap을 명시하지 않으면 metadata.source_type 기준으로 자동 선택한다.
     """
+    default_size, default_overlap = _chunk_params(metadata.source_type)
+    chunk_size = chunk_size if chunk_size is not None else default_size
+    overlap = overlap if overlap is not None else default_overlap
+
     sentences = _split_sentences(text)
     chunks: list[RagChunk] = []
     current: list[str] = []
