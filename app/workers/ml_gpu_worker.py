@@ -31,7 +31,13 @@ def _load_models() -> MLGpuModels:
     diarize.load()
     logger.info("pyannote diarization 로드 완료")
 
-    asr = WhisperASRWrapper(settings.asr_model_name, device=settings.asr_device)
+    asr = WhisperASRWrapper(
+        settings.asr_model_name,
+        device=settings.asr_device,
+        chunk_length_s=settings.asr_chunk_length_s,
+        stride_length_s=settings.asr_stride_length_s,
+        batch_size=settings.asr_batch_size,
+    )
     asr.load()
     logger.info("Whisper ASR 로드 완료")
 
