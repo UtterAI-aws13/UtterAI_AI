@@ -325,3 +325,121 @@ concepts:
       - "화용 어려움"
     language_area:
       - "pragmatics"
+
+  eojeol:
+    ko: "어절"
+    related_terms:
+      - "띄어쓰기 단위"
+      - "낱말 단위"
+      - "word unit"
+      - "Korean word"
+      - "어절 수"
+      - "NTJ"
+      - "NDJ"
+    language_area:
+      - "morphosyntax"
+      - "expressive_language"
+
+  case_particle:
+    ko: "격조사"
+    related_terms:
+      - "주격조사"
+      - "목적격조사"
+      - "부사격조사"
+      - "관형격조사"
+      - "처소격조사"
+      - "공동격조사"
+      - "조사 생략"
+      - "조사 대치"
+      - "조사 누락"
+      - "-이/-가"
+      - "-을/-를"
+      - "-에"
+      - "-에서"
+      - "-의"
+    language_area:
+      - "morphosyntax"
+
+  connective_ending:
+    ko: "연결어미"
+    related_terms:
+      - "어미 오류"
+      - "종결어미"
+      - "전성어미"
+      - "문장 연결"
+      - "복문"
+      - "-고"
+      - "-서"
+      - "-는데"
+      - "-면"
+      - "-기"
+      - "어미 누락"
+      - "어미 대치"
+    language_area:
+      - "morphosyntax"
+
+  phonological_process:
+    ko: "음운변동"
+    related_terms:
+      - "음운 과정"
+      - "대치"
+      - "생략"
+      - "첨가"
+      - "동화"
+      - "경음화"
+      - "축약"
+      - "종성 오류"
+      - "어말 자음 생략"
+      - "파열음화"
+      - "전설음화"
+      - "음소 오류 패턴"
+    language_area:
+      - "phonology"
+
+  disfluency:
+    ko: "비유창성"
+    related_terms:
+      - "반복"
+      - "연장"
+      - "막힘"
+      - "간투사"
+      - "수정"
+      - "머뭇거림"
+      - "삽입"
+      - "미완성 발화"
+      - "말더듬"
+      - "비유창성 빈도"
+      - "P-FA"
+    language_area:
+      - "fluency"
+      - "pragmatics"
+
+  main_concept:
+    ko: "핵심개념분석"
+    related_terms:
+      - "Main Concept Analysis"
+      - "MCA"
+      - "담화 핵심 정보"
+      - "정보 단위"
+      - "핵심 개념 전달"
+      - "AphasiaBank"
+    metrics:
+      - "main_concept_score"
+    language_area:
+      - "narrative_discourse"
+
+  functional_goal:
+    ko: "기능적 목표"
+    related_terms:
+      - "일상 의사소통"
+      - "활동 참여"
+      - "ICF"
+      - "기능적 의사소통"
+      - "보호자 교육"
+      - "가정 연계"
+      - "FCM"
+      - "ASHA-FACS"
+      - "WHO ICF"
+    language_area:
+      - "functional_communication"
+      - "clinical_documentation"

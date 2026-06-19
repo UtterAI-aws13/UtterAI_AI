@@ -75,8 +75,12 @@ class VectorStore:
 
             meta: dict = chunk_orm.metadata_json or {}
 
-            if allowed_areas and meta.get("language_area") not in allowed_areas:
-                continue
+            if allowed_areas:
+                chunk_areas = meta.get("language_area") or []
+                if isinstance(chunk_areas, str):
+                    chunk_areas = [chunk_areas]
+                if not any(area in allowed_areas for area in chunk_areas):
+                    continue
 
             evidence.append(RagEvidence(
                 document_id=chunk_orm.document_id,
