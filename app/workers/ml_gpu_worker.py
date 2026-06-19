@@ -4,6 +4,7 @@
 # 담당 단계: 화자 분리 + STT → transcript draft 저장 → 완료 (리포트 큐는 BE finalize가 발행)
 import asyncio
 import json
+import threading
 
 import boto3
 from loguru import logger
@@ -20,6 +21,18 @@ from app.pipelines.analysis_pipeline import run_ml_gpu_stage, MLGpuModels
 from app.models.diarization_pyannote import PyannoteWrapper
 from app.models.asr_whisper import WhisperASRWrapper
 from app.storage.rds import get_be_engine
+
+
+def _extend_visibility(sqs_client, queue_url: str, receipt_handle: str, stop_event: threading.Event, interval: int = 300) -> None:
+    while not stop_event.wait(interval):
+        try:
+            sqs_client.change_message_visibility(
+                QueueUrl=queue_url,
+                ReceiptHandle=receipt_handle,
+                VisibilityTimeout=1800,
+            )
+        except Exception as e:
+            logger.warning(f"[heartbeat] VisibilityTimeout 연장 실패: {e}")
 
 
 def _load_models() -> MLGpuModels:
@@ -50,7 +63,6 @@ def start_worker() -> None:
                 QueueUrl=settings.sqs_gpu_inference_queue_url,
                 MaxNumberOfMessages=1,
                 WaitTimeSeconds=20,
-                VisibilityTimeout=600,
                 MessageAttributeNames=["All"],
             )
         except Exception as e:
@@ -65,6 +77,14 @@ def start_worker() -> None:
         receipt_handle = raw["ReceiptHandle"]
         body = json.loads(raw["Body"])
         message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
+
+        stop_event = threading.Event()
+        heartbeat = threading.Thread(
+            target=_extend_visibility,
+            args=(sqs, settings.sqs_gpu_inference_queue_url, receipt_handle, stop_event),
+            daemon=True,
+        )
+        heartbeat.start()
 
         try:
             tracer = trace.get_tracer(__name__)
@@ -85,6 +105,8 @@ def start_worker() -> None:
         except Exception as e:
             record_stage_failure("ml-gpu-worker", "message")
             logger.error(f"ML GPU STAGE 실패: {e}")
+        finally:
+            stop_event.set()
 
 
 if __name__ == "__main__":
