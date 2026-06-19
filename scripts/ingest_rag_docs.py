@@ -74,6 +74,48 @@ DOC_METADATA: dict[str, dict] = {
         "clinical_task": ["assessment"],
         "assessment_tool": ["PRES", "SELSI", "REVT", "U-TAP2", "APAC", "K-ALAS", "LSSC", "KOPLAC"],
     },
+    # ── P0 scoring_rule 문서 (docs/rag/*.txt) ────────────────────────────────
+    "doc_metric_exception_rule": {
+        "source_type": "scoring_rule",
+        "age_group": "all",
+        "language_area": ["expressive_language", "vocabulary", "phonology", "narrative_discourse", "fluency"],
+        "metric": ["mlu_morpheme", "ttr", "ndw", "pcc", "ciu_count"],
+        "clinical_task": ["assessment"],
+        "assessment_tool": ["K-ALAS"],
+    },
+    "doc_metric_mlu_korean_rule": {
+        "source_type": "scoring_rule",
+        "age_group": "preschool",
+        "language_area": ["expressive_language", "morphosyntax"],
+        "metric": ["mlu_morpheme", "llu_morpheme"],
+        "clinical_task": ["assessment", "report_generation"],
+        "assessment_tool": ["K-ALAS"],
+    },
+    "doc_metric_pcc_korean_rule": {
+        "source_type": "scoring_rule",
+        "age_group": "preschool",
+        "language_area": ["phonology"],
+        "metric": ["pcc"],
+        "clinical_task": ["assessment", "report_generation"],
+        "assessment_tool": ["U-TAP2", "APAC"],
+    },
+    "doc_metric_ciu_korean_rule": {
+        "source_type": "scoring_rule",
+        "age_group": "adult",
+        "language_area": ["narrative_discourse", "functional_communication"],
+        "metric": ["ciu_count", "ciu_ratio", "ciu_per_minute"],
+        "clinical_task": ["assessment", "report_generation"],
+        "assessment_tool": [],
+    },
+    # ── P0 safety_rule 문서 (docs/rag/*.txt) ─────────────────────────────────
+    "doc_report_safety_rule": {
+        "source_type": "safety_rule",
+        "age_group": "all",
+        "language_area": ["clinical_documentation"],
+        "metric": [],
+        "clinical_task": ["report_generation"],
+        "assessment_tool": [],
+    },
     # ── 연구 논문 (docs/papers/*.pdf) ────────────────────────────────────────
     "doc_asd_slp_subjectivity": {
         "age_group": "preschool",
@@ -120,7 +162,7 @@ def scan_docs():
                     document_id=doc_id,
                     chunk_id="",
                     title=title,
-                    source_type=source_type,
+                    source_type=overrides.get("source_type", source_type),
                     age_group=overrides.get("age_group", "all"),
                     language_area=overrides.get("language_area", []),
                     metric=overrides.get("metric", []),
