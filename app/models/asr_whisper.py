@@ -12,10 +12,21 @@ class WhisperASRWrapper(BaseModelWrapper):
     transformers pipeline 방식과 faster-whisper 방식 중 하나를 선택해 구현한다.
     faster-whisper는 CTranslate2 기반으로 GPU 메모리 효율이 더 좋다.
     """
-    def __init__(self, model_name: str, device: str = "cuda", language: str = "ko"):
+    def __init__(
+        self,
+        model_name: str,
+        device: str = "cuda",
+        language: str = "ko",
+        chunk_length_s: int = 30,
+        stride_length_s: int = 5,
+        batch_size: int = 8,
+    ):
         self.model_name = model_name
         self.device = device
         self.language = language   # 한국어 고정 ("ko")
+        self.chunk_length_s = chunk_length_s
+        self.stride_length_s = stride_length_s
+        self.batch_size = batch_size
         self.pipeline = None
 
     def load(self) -> None:
@@ -38,6 +49,9 @@ class WhisperASRWrapper(BaseModelWrapper):
             audio_path,
             generate_kwargs={"language": self.language},
             return_timestamps=True,
+            chunk_length_s=self.chunk_length_s,
+            stride_length_s=(self.stride_length_s, self.stride_length_s),
+            batch_size=self.batch_size,
         )
 
         full_text: str = result["text"].strip()
