@@ -1,4 +1,4 @@
-# EXAONE 프롬프트 빌더
+# Bedrock Claude 프롬프트 빌더
 # 언어 지표, 대표 발화, RAG 근거를 조합해 SOAP Note 생성 프롬프트를 만든다
 # 프롬프트에는 출력 JSON schema와 안전 지침(진단 확정 금지)이 반드시 포함되어야 한다
 from app.schemas import Utterance, SpeakerMetrics, RagResult
@@ -10,7 +10,7 @@ REPORT_SYSTEM_PROMPT = """당신은 언어치료 세션 분석을 보조하는 A
 - 출력은 반드시 JSON 형식을 따르세요.
 - 치료사가 검토할 초안임을 명시하세요."""
 
-# EXAONE이 반드시 따라야 하는 출력 JSON 구조
+# Bedrock Claude가 반드시 따라야 하는 출력 JSON 구조
 REPORT_OUTPUT_SCHEMA = """{
   "soap_note": {
     "subjective": "string",
@@ -90,7 +90,7 @@ def build_report_prompt(
     metrics: list[SpeakerMetrics],
     rag_result: RagResult,
 ) -> str:
-    """EXAONE 입력 프롬프트를 생성한다.
+    """Bedrock Claude 입력 프롬프트를 생성한다.
 
     LLM에는 원본 음성이나 전체 전사문 대신 다음 정보만 전달한다:
     - 화자별 언어 지표 수치

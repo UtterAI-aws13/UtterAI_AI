@@ -16,7 +16,7 @@ class JobStatus(str, Enum):
     ALIGNING = "ALIGNING"                     # VAD + 화자 + STT 결과 정렬 중
     CALCULATING_METRICS = "CALCULATING_METRICS"  # MLU, NDW, NTW, TTR 계산 중
     RUNNING_RAG = "RUNNING_RAG"               # pgvector 문서 검색 중
-    GENERATING_REPORT = "GENERATING_REPORT"   # EXAONE SOAP Note 초안 생성 중
+    GENERATING_REPORT = "GENERATING_REPORT"   # Bedrock Claude SOAP Note 초안 생성 중
     SAVING_RESULT = "SAVING_RESULT"           # S3/RDS 저장 중
     COMPLETED = "COMPLETED"                   # 전체 파이프라인 완료
     FAILED = "FAILED"                         # 오류로 중단

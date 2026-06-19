@@ -166,18 +166,13 @@ async def main(audio_path: str, question: str) -> None:
         rag_result = RagResult(query=question, expanded_query=[], evidence=[])
 
     # ──────────────────────────────────────────
-    # 8. Report (EXAONE LLM)
+    # 8. Report (Bedrock Claude)
     # ──────────────────────────────────────────
-    _header("8. report_pipeline (EXAONE)")
+    _header("8. report_pipeline (Bedrock Claude)")
     try:
-        from app.models.llm_exaone import EXAONEWrapper
         from app.pipelines.report_pipeline import generate_report
 
-        llm = EXAONEWrapper(settings.llm_model_name, device=settings.llm_device)
-        llm.load()
-        _ok("EXAONE 로드 완료")
-
-        report = generate_report(job_id, session_id, utterances, metrics, rag_result, llm)
+        report = generate_report(job_id, session_id, utterances, metrics, rag_result)
         _ok("SOAP Note 생성 완료")
         s = report.soap_note
         print(f"\n  S (Subjective): {s.subjective}")
