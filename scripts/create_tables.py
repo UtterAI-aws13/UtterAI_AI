@@ -1,34 +1,46 @@
 """
-SQLAlchemy ORM 기반 테이블 생성 스크립트.
+AI DB 테이블 생성 스크립트.
 
-docker-compose 대신 직접 PostgreSQL을 사용할 때, 또는
-테이블 구조 변경 후 재생성이 필요할 때 실행한다.
+AI 서버 전용 PostgreSQL(pgvector 필수)에 rag_chunks 테이블을 생성한다.
+BE RDS와 분리된 별도 DB를 대상으로 한다.
 
-실행 전 .env 파일에 DATABASE_URL이 설정돼 있어야 한다.
+실행 전 환경 변수(또는 .env)에 DB 접속 정보를 설정해야 한다:
+    DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
 
 사용법:
-    python scripts/create_tables.py
+    python scripts/create_tables.py [--drop]
+
+옵션:
+    --drop  기존 테이블을 먼저 DROP한 뒤 재생성한다 (개발 환경 전용)
 """
 import asyncio
 import sys
 from pathlib import Path
 
-# 프로젝트 루트를 import 경로에 추가
+import sqlalchemy
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.storage.db import engine, Base
+from app.storage.db import get_engine, Base
 from app.rag.vector_store import RagChunkORM  # noqa: F401 — Base에 ORM 모델 등록
 
 
-async def main() -> None:
-    print("테이블 생성 시작...")
+async def main(drop: bool = False) -> None:
+    engine = get_engine()
     async with engine.begin() as conn:
-        # pgvector 확장이 활성화돼 있어야 Vector 타입이 동작한다
-        await conn.execute(__import__("sqlalchemy").text("CREATE EXTENSION IF NOT EXISTS vector"))
+        await conn.execute(sqlalchemy.text("CREATE EXTENSION IF NOT EXISTS vector"))
+
+        if drop:
+            print("[경고] 기존 테이블 DROP 후 재생성합니다.")
+            await conn.run_sync(Base.metadata.drop_all)
+
         await conn.run_sync(Base.metadata.create_all)
-    print("완료: rag_chunks 테이블 생성")
+
+    tables = list(Base.metadata.tables.keys())
+    print(f"완료: {tables}")
     await engine.dispose()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    drop_flag = "--drop" in sys.argv
+    asyncio.run(main(drop=drop_flag))

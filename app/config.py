@@ -16,16 +16,61 @@ class Settings(BaseSettings):
 
     # AWS
     aws_region: str = "ap-northeast-2"
-    s3_bucket_audio: str = "utterai-audio-dev"
-    s3_bucket_report: str = "utterai-report-dev"
-    s3_bucket_rag: str = "utterai-rag-dev"
+    s3_bucket_audio: str = "utterai-dev-raw-audio"
+    s3_bucket_report: str = "utterai-dev-reports"
+    s3_bucket_rag: str = "utterai-dev-rag-ingest"
 
-    # DB - SQLAlchemy async 연결 URL (pgvector 확장 포함된 PostgreSQL)
-    database_url: str = ""
+    # AI DB - pgvector 확장 포함된 PostgreSQL (RAG 벡터 검색용)
+    db_user: str = ""
+    db_password: str = ""
+    db_host: str = ""
+    db_port: int = 5432
+    db_name: str = ""
 
-    # SQS - 비동기 Job 처리용 큐
-    sqs_analysis_queue_url: str = ""
+    @property
+    def database_url(self):
+        from sqlalchemy import URL
+        return URL.create(
+            "postgresql+psycopg",
+            username=self.db_user,
+            password=self.db_password,
+            host=self.db_host,
+            port=self.db_port,
+            database=self.db_name,
+        )
+
+    # BE RDS - analysis_jobs / transcripts / transcript_segments 테이블 (ML GPU Worker만 사용)
+    be_db_user: str = ""
+    be_db_password: str = ""
+    be_db_host: str = ""
+    be_db_port: int = 5432
+    be_db_name: str = ""
+
+    @property
+    def be_database_url(self):
+        from sqlalchemy import URL
+        return URL.create(
+            "postgresql+psycopg",
+            username=self.be_db_user,
+            password=self.be_db_password,
+            host=self.be_db_host,
+            port=self.be_db_port,
+            database=self.be_db_name,
+        )
+
+
+    # Worker 타입 - Pod 환경변수로 주입 (cpu / ml-gpu / llm-gpu)
+    worker_type: str = "cpu"
+
+    # SQS
+    sqs_audio_preprocess_queue_url: str = ""
+    sqs_gpu_inference_queue_url: str = ""
+    sqs_report_analysis_queue_url: str = ""
     sqs_rag_ingest_queue_url: str = ""
+
+    # Bedrock
+    bedrock_region: str = "ap-northeast-2"
+    bedrock_report_model_id: str = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 
     # 모델 이름 - Hugging Face Hub ID
     vad_model_name: str = "onnx-community/silero-vad"
@@ -40,11 +85,25 @@ class Settings(BaseSettings):
     diarization_device: str = "cuda"
     llm_device: str = "cuda"
 
+    # Whisper chunking - 긴 음성 추론 성능 향상
+    asr_chunk_length_s: int = 30    # Whisper 네이티브 컨텍스트 윈도우(30s)에 맞춤
+    asr_stride_length_s: int = 5    # 청크 경계 아티팩트 방지용 양쪽 오버랩
+    asr_batch_size: int = 8         # GPU 병렬 처리 청크 수
+
     # RAG 검색 파라미터
     rag_top_k: int = 5               # 검색 결과 상위 k개
     rag_score_threshold: float = 0.5  # 이 점수 미만의 chunk는 근거에서 제외
 
-    model_config = {"env_file": ".env"}
+    # OpenTelemetry
+    otel_service_name: str = "ai"
+    otel_exporter_otlp_endpoint: str = "http://localhost:4318"
+    otel_exporter_otlp_protocol: str = "http/protobuf"
+    otel_metrics_exporter: str = "otlp"
+    otel_traces_exporter: str = "otlp"
+    otel_logs_exporter: str = "none"
+    otel_resource_attributes: str = "deployment.environment=local,team=utterai"
+
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

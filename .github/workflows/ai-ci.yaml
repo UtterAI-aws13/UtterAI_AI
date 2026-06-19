@@ -1,0 +1,83 @@
+name: AI CI
+
+on:
+  pull_request:
+    branches:
+      - dev
+      - main
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "Dockerfile*"
+      - ".dockerignore"
+      - ".github/workflows/ai-ci.yaml"
+  push:
+    branches:
+      - dev
+      - main
+      - "feature/**"
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "Dockerfile*"
+      - ".dockerignore"
+      - ".github/workflows/ai-ci.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  ai-test:
+    runs-on: ubuntu-latest
+    env:
+      # CI에서는 실제 DB에 접속하지 않고 app import 가능 여부만 확인합니다.
+      DATABASE_URL: postgresql+psycopg://utterai:utterai@localhost:5432/utterai_ai
+      APP_ENV: ci
+      AWS_REGION: ap-northeast-2
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra cpu --extra dev
+
+      - name: Run lint
+        run: uv run ruff check .
+
+      - name: Import app
+        run: uv run python -c "from app.main import app; print(app.title)"
+
+      - name: Run tests
+        run: uv run pytest
+
+  docker-build-cpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Docker build CPU image check
+        run: docker build -f Dockerfile.cpu -t utterai-ai-cpu:ci .
+
+  docker-build-gpu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space before GPU Docker build
+        run: |
+          # GitHub-hosted runner에는 CI에 필요 없는 SDK/캐시가 기본으로 많이 들어있습니다.
+          # GPU Docker image는 CUDA/cuDNN layer가 커서 빌드 전에 여유 공간을 확보합니다.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune -af
+          df -h
+
+      - name: Docker build GPU image check
+        run: docker build -f Dockerfile.gpu -t utterai-ai-gpu:ci .

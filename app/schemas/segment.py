@@ -21,9 +21,9 @@ class SpeakerRole:
     MVP에서는 치료사가 직접 지정하거나 발화량 규칙으로 추정한다.
     확정 전까지는 UNKNOWN으로 유지한다.
     """
-    CHILD = "CHILD"
-    THERAPIST = "THERAPIST"
-    CAREGIVER = "CAREGIVER"
+    PATIENT = "PATIENT"
+    SLP = "SLP"
+    GUARDIAN = "GUARDIAN"
     UNKNOWN = "UNKNOWN"
 
 

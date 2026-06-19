@@ -21,6 +21,7 @@ class JobStatus(str, Enum):
     COMPLETED = "COMPLETED"                   # 전체 파이프라인 완료
     FAILED = "FAILED"                         # 오류로 중단
     RETRYING = "RETRYING"                     # 재시도 중
+    CANCELLED = "CANCELLED"                   # BE에서 취소 요청됨
 
 
 class TargetSpeakerPolicy(str, Enum):
@@ -43,12 +44,14 @@ class JobOptions(BaseModel):
     enable_diarization: bool = True           # False면 화자 분리 생략, 전체를 UNKNOWN 처리
     enable_rag: bool = True                   # False면 RAG 검색 및 리포트 생성 생략
     target_speaker_policy: TargetSpeakerPolicy = TargetSpeakerPolicy.AUTO_DETECT_CHILD
+    template_id: str | None = None            # 리포트 생성에 사용할 템플릿 ID (BE에서 전달)
 
 
 class JobMessage(BaseModel):
     """SQS 메시지 또는 Worker 내부 Job 메시지 스키마."""
     job_id: str
     session_id: str
+    audio_file_id: str
     user_id: str
     audio: AudioInput
     options: JobOptions = JobOptions()
@@ -86,3 +89,31 @@ class JobFailureInfo(BaseModel):
     error_code: str                           # 예: ASR_FAILED, AUDIO_TOO_SHORT
     error_message: str
     retryable: bool = True
+
+
+class MLGpuMessage(BaseModel):
+    """cpu-worker → gpu-inference-queue 발행 메시지. ML GPU Worker가 수신한다."""
+    job_id: str
+    session_id: str
+    audio_file_id: str
+    wav_s3_key: str       # 전처리된 WAV S3 경로
+    vad_s3_key: str       # VAD 결과 JSON S3 경로
+    options: JobOptions = JobOptions()
+
+
+class LLMMessage(BaseModel):
+    """ml-gpu-worker → gpu-inference-queue 완료 후 BE finalize 경유로 report-analysis-queue에 전달되는 메시지 스키마."""
+    job_id: str
+    session_id: str
+    audio_file_id: str
+    vad_s3_key: str       # VAD 결과 JSON S3 경로
+    speaker_s3_key: str   # 화자 분리 결과 JSON S3 경로
+    asr_s3_key: str       # ASR 결과 JSON S3 경로
+    options: JobOptions = JobOptions()
+
+
+class ReportJobMessage(BaseModel):
+    """BE finalize → report-analysis-queue 발행 메시지. LLM GPU Worker가 수신한다."""
+    job_id: str
+    session_id: str
+    transcript_id: str

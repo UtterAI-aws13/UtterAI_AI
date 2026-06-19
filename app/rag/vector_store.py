@@ -1,7 +1,14 @@
-# pgvector 기반 벡터 저장소
-# rag_chunks 테이블에 청크 텍스트와 KURE-v1 임베딩을 저장하고
-# cosine similarity 기반 검색을 제공한다
-from sqlalchemy import Column, String, Text, JSON, select
+# pgvector 기반 벡터 저장소 (로컬 개발 전용)
+# 프로덕션에서는 Bedrock KB + Aurora/RDS pgvector로 대체된다.
+#
+# init_db.sql 스키마 기준:
+#   chunk_id TEXT PRIMARY KEY
+#   document_id TEXT NOT NULL
+#   content TEXT NOT NULL
+#   embedding VECTOR(1024) NOT NULL
+#   metadata_json JSONB NOT NULL DEFAULT '{}'
+from sqlalchemy import Column, String, Text, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from pgvector.sqlalchemy import Vector
 
@@ -13,10 +20,10 @@ class RagChunkORM(Base):
     __tablename__ = "rag_chunks"
 
     chunk_id = Column(String, primary_key=True)
-    document_id = Column(String, index=True, nullable=False)
+    document_id = Column(Text, nullable=False)
     content = Column(Text, nullable=False)
     embedding = Column(Vector(1024), nullable=False)
-    metadata_json = Column(JSON, nullable=False, default=dict)
+    metadata_json = Column(JSONB, nullable=False, default=dict)
 
 
 class VectorStore:
@@ -24,7 +31,7 @@ class VectorStore:
         self.session = session
 
     async def upsert(self, chunks: list[RagChunk], embeddings: list[list[float]]) -> None:
-        """청크와 임베딩을 배치로 저장한다. 동일 chunk_id가 있으면 덮어쓴다."""
+        """청크와 임베딩을 저장한다. 동일 chunk_id면 덮어쓴다."""
         for chunk, emb in zip(chunks, embeddings):
             obj = RagChunkORM(
                 chunk_id=chunk.chunk_id,
@@ -50,7 +57,7 @@ class VectorStore:
         stmt = (
             select(RagChunkORM, score_col)
             .order_by(distance_col)
-            .limit(top_k * 3)  # 메타데이터 필터 후 top_k를 채우기 위해 넉넉히 조회
+            .limit(top_k * 3)
         )
 
         result = await self.session.execute(stmt)

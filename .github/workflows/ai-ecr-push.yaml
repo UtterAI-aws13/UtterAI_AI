@@ -1,0 +1,321 @@
+name: AI ECR Push
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+    paths:
+      - "app/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "Dockerfile*"
+      - ".dockerignore"
+      - ".github/workflows/ai-ecr-push.yaml"
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  prepare:
+    name: Prepare image metadata
+    runs-on: ubuntu-latest
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.image_tag }}
+      target_env: ${{ steps.meta.outputs.target_env }}
+
+    steps:
+      - name: Create image metadata
+        id: meta
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            TARGET_ENV="prod"
+            IMAGE_TAG="prod-${SHORT_SHA}"
+          elif [ "${GITHUB_REF_NAME}" = "dev" ]; then
+            TARGET_ENV="dev"
+            IMAGE_TAG="dev-${SHORT_SHA}"
+          else
+            echo "AI ECR push는 dev 또는 main 브랜치에서만 실행합니다."
+            exit 1
+          fi
+
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "image_tag=$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+          echo "TARGET_ENV=$TARGET_ENV"
+          echo "IMAGE_TAG=$IMAGE_TAG"
+
+  detect-changes:
+    name: Detect CPU/GPU image changes
+    runs-on: ubuntu-latest
+
+    outputs:
+      build_cpu: ${{ steps.detect.outputs.build_cpu }}
+      build_gpu: ${{ steps.detect.outputs.build_gpu }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed image scope
+        id: detect
+        run: |
+          BUILD_CPU="false"
+          BUILD_GPU="false"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BUILD_CPU="true"
+            BUILD_GPU="true"
+          else
+            BASE_SHA="${{ github.event.before }}"
+            HEAD_SHA="${{ github.sha }}"
+
+            if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+              BASE_SHA="$(git rev-parse "${HEAD_SHA}^" 2>/dev/null || true)"
+            fi
+
+            if [ -n "$BASE_SHA" ]; then
+              git diff --name-only "$BASE_SHA" "$HEAD_SHA" > /tmp/changed-files.txt
+            else
+              git show --name-only --pretty="" "$HEAD_SHA" > /tmp/changed-files.txt
+            fi
+
+            echo "Changed files:"
+            cat /tmp/changed-files.txt
+
+            while IFS= read -r file; do
+              case "$file" in
+                Dockerfile.cpu|app/workers/cpu_worker.py|app/workers/rag_ingest_worker.py)
+                  BUILD_CPU="true"
+                  ;;
+                Dockerfile.gpu|app/workers/llm_gpu_worker.py|app/workers/ml_gpu_worker.py)
+                  BUILD_GPU="true"
+                  ;;
+                Dockerfile|.dockerignore|pyproject.toml|uv.lock|.github/workflows/ai-ecr-push.yaml|app/*|app/api/*|app/metrics/*|app/mocks/*|app/models/*|app/observability/*|app/pipelines/*|app/rag/*|app/schemas/*|app/storage/*|app/utils/*|app/workers/*)
+                  BUILD_CPU="true"
+                  BUILD_GPU="true"
+                  ;;
+              esac
+            done < /tmp/changed-files.txt
+          fi
+
+          echo "build_cpu=$BUILD_CPU" >> "$GITHUB_OUTPUT"
+          echo "build_gpu=$BUILD_GPU" >> "$GITHUB_OUTPUT"
+
+          echo "BUILD_CPU=$BUILD_CPU"
+          echo "BUILD_GPU=$BUILD_GPU"
+
+  build-and-push-cpu:
+    name: Build and push CPU image
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - detect-changes
+    if: needs.detect-changes.outputs.build_cpu == 'true'
+
+    outputs:
+      ecr_registry: ${{ steps.ecr-login.outputs.registry }}
+
+    environment:
+      name: ${{ needs.prepare.outputs.target_env }}
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      ECR_CPU_REPOSITORY: ${{ vars.ECR_AI_CPU_REPOSITORY }}
+      IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate required variables
+        run: |
+          if [ -z "$AWS_REGION" ]; then
+            echo "AWS_REGION GitHub Variable이 필요합니다."
+            exit 1
+          fi
+
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "AWS_ROLE_ARN GitHub Variable이 필요합니다."
+            exit 1
+          fi
+
+          if [ -z "$ECR_CPU_REPOSITORY" ]; then
+            echo "ECR_AI_CPU_REPOSITORY GitHub Variable이 필요합니다."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push CPU Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_CPU_REPOSITORY}:${IMAGE_TAG}"
+
+          echo "Build CPU image: $IMAGE_URI"
+          docker build -f Dockerfile.cpu -t "$IMAGE_URI" .
+
+          echo "Push CPU image: $IMAGE_URI"
+          docker push "$IMAGE_URI"
+
+          echo "CPU_IMAGE_URI=$IMAGE_URI"
+
+  build-and-push-gpu:
+    name: Build and push GPU image
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - detect-changes
+    if: needs.detect-changes.outputs.build_gpu == 'true'
+
+    outputs:
+      ecr_registry: ${{ steps.ecr-login.outputs.registry }}
+
+    environment:
+      name: ${{ needs.prepare.outputs.target_env }}
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      ECR_GPU_REPOSITORY: ${{ vars.ECR_AI_GPU_REPOSITORY }}
+      IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate required variables
+        run: |
+          if [ -z "$AWS_REGION" ]; then
+            echo "AWS_REGION GitHub Variable이 필요합니다."
+            exit 1
+          fi
+
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "AWS_ROLE_ARN GitHub Variable이 필요합니다."
+            exit 1
+          fi
+
+          if [ -z "$ECR_GPU_REPOSITORY" ]; then
+            echo "ECR_AI_GPU_REPOSITORY GitHub Variable이 필요합니다."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Free disk space before GPU Docker build
+        run: |
+          # GitHub-hosted runner에는 CI에 필요 없는 SDK/캐시가 기본으로 많이 들어있습니다.
+          # GPU Docker image는 CUDA/cuDNN layer가 커서 빌드 전에 여유 공간을 확보합니다.
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          docker system prune -af
+          df -h
+
+      - name: Build and push GPU Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_GPU_REPOSITORY}:${IMAGE_TAG}"
+
+          echo "Build GPU image: $IMAGE_URI"
+          docker build -f Dockerfile.gpu -t "$IMAGE_URI" .
+
+          echo "Push GPU image: $IMAGE_URI"
+          docker push "$IMAGE_URI"
+
+          echo "GPU_IMAGE_URI=$IMAGE_URI"
+
+  dispatch-gitops-update:
+    name: Dispatch GitOps AI image update
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - detect-changes
+      - build-and-push-cpu
+      - build-and-push-gpu
+    if: |
+      always() &&
+      (
+        needs.detect-changes.outputs.build_cpu == 'true' ||
+        needs.detect-changes.outputs.build_gpu == 'true'
+      ) &&
+      (
+        needs.detect-changes.outputs.build_cpu != 'true' ||
+        needs.build-and-push-cpu.result == 'success'
+      ) &&
+      (
+        needs.detect-changes.outputs.build_gpu != 'true' ||
+        needs.build-and-push-gpu.result == 'success'
+      )
+
+    environment:
+      name: ${{ needs.prepare.outputs.target_env }}
+
+    env:
+      ECR_CPU_REPOSITORY: ${{ vars.ECR_AI_CPU_REPOSITORY }}
+      ECR_GPU_REPOSITORY: ${{ vars.ECR_AI_GPU_REPOSITORY }}
+      CPU_ECR_REGISTRY: ${{ needs.build-and-push-cpu.outputs.ecr_registry }}
+      GPU_ECR_REGISTRY: ${{ needs.build-and-push-gpu.outputs.ecr_registry }}
+      TARGET_ENV: ${{ needs.prepare.outputs.target_env }}
+      IMAGE_TAG: ${{ needs.prepare.outputs.image_tag }}
+      BUILD_CPU: ${{ needs.detect-changes.outputs.build_cpu }}
+      BUILD_GPU: ${{ needs.detect-changes.outputs.build_gpu }}
+
+    steps:
+      - name: Create Infra GitHub App token
+        id: infra-app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.UTTERAI_GITOPS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.UTTERAI_GITOPS_APP_PRIVATE_KEY }}
+          owner: UtterAI-aws13
+          repositories: UtterAI_Infra
+          permission-contents: write
+
+      - name: Dispatch GitOps AI image update
+        env:
+          GH_TOKEN: ${{ steps.infra-app-token.outputs.token }}
+        run: |
+          ECR_REGISTRY="${CPU_ECR_REGISTRY:-$GPU_ECR_REGISTRY}"
+
+          if [ -z "$ECR_REGISTRY" ]; then
+            echo "ECR registry를 확인할 수 없습니다."
+            exit 1
+          fi
+
+          gh api repos/UtterAI-aws13/UtterAI_Infra/dispatches \
+            --method POST \
+            -f event_type=ai-image-pushed \
+            -f "client_payload[target_env]=$TARGET_ENV" \
+            -f "client_payload[image_tag]=$IMAGE_TAG" \
+            -f "client_payload[ecr_registry]=$ECR_REGISTRY" \
+            -f "client_payload[cpu_repository]=$ECR_CPU_REPOSITORY" \
+            -f "client_payload[gpu_repository]=$ECR_GPU_REPOSITORY" \
+            -f "client_payload[build_cpu]=$BUILD_CPU" \
+            -f "client_payload[build_gpu]=$BUILD_GPU"
