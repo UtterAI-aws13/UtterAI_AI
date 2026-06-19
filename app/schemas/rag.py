@@ -1,5 +1,5 @@
 # RAG(Retrieval-Augmented Generation) 관련 스키마
-# 언어발달/치료 문서를 검색해 EXAONE 리포트 생성의 근거로 사용한다
+# 언어발달/치료 문서를 검색해 Bedrock Claude 리포트 생성의 근거로 사용한다
 from datetime import datetime
 from pydantic import BaseModel
 

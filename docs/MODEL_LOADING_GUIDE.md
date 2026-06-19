@@ -172,34 +172,38 @@ vectors = model.encode(["텍스트 예시"], normalize_embeddings=True)
 
 ---
 
-### 5. EXAONE LLM — `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct`
+### 5. LLM — AWS Bedrock Claude
 
 **역할**: RAG 검색 근거와 언어 지표를 바탕으로 SOAP Note 초안을 생성합니다.
 
-**로딩 방식**: `transformers`의 `AutoModelForCausalLM`으로 자동 다운로드합니다.
+**호출 방식**: `boto3`의 `bedrock-runtime` 클라이언트로 API를 호출합니다. 로컬 모델 다운로드 없음.
 
 ```python
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
+import boto3, json
 
-# 첫 호출 시 자동 다운로드 (~5 GB)
-tokenizer = AutoTokenizer.from_pretrained("LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct")
-model = AutoModelForCausalLM.from_pretrained(
-    "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct",
-    torch_dtype=torch.bfloat16,
-    device_map="cuda",
+client = boto3.client("bedrock-runtime", region_name="ap-northeast-2")
+response = client.invoke_model(
+    modelId="global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    body=json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 2048,
+        "temperature": 0.3,
+        "messages": [{"role": "user", "content": prompt}],
+    }),
+    contentType="application/json",
+    accept="application/json",
 )
 ```
 
 **특징**
-- GPU 강력 권장 (2.4B 파라미터, bfloat16 기준 약 5 GB VRAM)
-- CPU 실행 가능하나 응답 생성에 수 분 소요
-- `apply_chat_template`으로 instruct 포맷 자동 적용
-- 다운로드 크기: 약 5 GB
+- 로컬 GPU/모델 불필요. AWS IAM 권한만 있으면 즉시 사용 가능
+- `bedrock_report_model_id` 설정값으로 모델 변경 가능
+- 재시도(최대 3회, 지수 백오프)는 `bedrock_client.py`가 처리
+- ThrottlingException 등 재시도 가능한 오류 자동 처리
 
-**gated 여부**: 없음 (토큰 불필요)
+**필요 권한**: `bedrock:InvokeModel` (IAM 정책 또는 인스턴스 역할)
 
-**구현 파일**: `app/models/llm_exaone.py`
+**구현 파일**: `app/pipelines/bedrock_client.py`
 
 ---
 
@@ -211,8 +215,8 @@ model = AutoModelForCausalLM.from_pretrained(
 | Whisper large-v3-turbo | ~1.5 GB | 권장 | 불필요 |
 | pyannote speaker-diarization-3.1 | ~800 MB | 권장 | **필요** |
 | KURE-v1 | ~500 MB | 불필요 | 불필요 |
-| EXAONE-3.5-2.4B-Instruct | ~5 GB | 권장 | 불필요 |
-| **합계** | **~8 GB** | | |
+| Bedrock Claude | 없음 (API) | 불필요 | 불필요 |
+| **합계** | **~2.8 GB** | | |
 
 ---
 
@@ -224,7 +228,8 @@ CPU Worker와 GPU Worker를 분리해 배포합니다.
 | Worker | 담당 모델 | 실행 환경 |
 |---|---|---|
 | CPU Worker | Silero VAD, KURE-v1, Kiwi, 언어 지표 계산 | ECS Fargate (CPU) |
-| GPU Worker | Whisper, pyannote, EXAONE | EKS GPU Node / GPU EC2 |
+| GPU Worker | Whisper, pyannote | EKS GPU Node / GPU EC2 |
+| Report Worker | Bedrock Claude (API 호출) | ECS Fargate (CPU) |
 
 ---
 

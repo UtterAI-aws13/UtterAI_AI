@@ -1,14 +1,8 @@
 # 리포트 생성 파이프라인
-# 언어 지표 + RAG 검색 근거를 EXAONE에 입력해 SOAP Note 초안 JSON을 생성한다
+# 언어 지표 + RAG 검색 근거를 Bedrock Claude에 입력해 SOAP Note 초안 JSON을 생성한다
 #
-# LLM 출력 JSON 처리 전략:
-#   1차 시도: raw 텍스트를 직접 json.loads()
-#   2차 시도: ```json ... ``` 마크다운 블록에서 추출
-#   3차 시도: 텍스트에서 첫 번째 {...} 블록 추출
-#   필수 필드 누락 시 빈 문자열로 채워 schema 오류 방지 (schema repair)
-#   MAX_RETRIES 초과 시 RuntimeError 발생
-import json
-import re
+# JSON 파싱 및 재시도는 bedrock_client.invoke_claude()가 처리한다.
+# 필수 필드 누락 시 빈 문자열로 채워 schema 오류를 방지한다 (schema repair).
 import uuid
 from typing import TYPE_CHECKING
 
@@ -19,37 +13,8 @@ from app.schemas import (
 from app.rag.prompt_templates import build_report_prompt
 from app.config import settings
 
-MAX_RETRIES = 3
-
 if TYPE_CHECKING:
     from app.schemas.job import ReportJobMessage
-
-_JSON_BLOCK_RE = re.compile(r'```(?:json)?\s*([\s\S]*?)\s*```')
-_JSON_OBJECT_RE = re.compile(r'\{[\s\S]*\}')
-
-
-def _extract_json(raw: str) -> dict:
-    """LLM 출력에서 JSON 객체를 추출한다. 파싱 불가 시 ValueError를 발생시킨다."""
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        pass
-
-    match = _JSON_BLOCK_RE.search(raw)
-    if match:
-        try:
-            return json.loads(match.group(1))
-        except json.JSONDecodeError:
-            pass
-
-    match = _JSON_OBJECT_RE.search(raw)
-    if match:
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            pass
-
-    raise ValueError(f"JSON 파싱 실패. LLM 출력 앞 200자: {raw[:200]}")
 
 
 def _repair_schema(data: dict) -> dict:
@@ -74,15 +39,17 @@ def generate_report(
     utterances: list[Utterance],
     metrics: list[SpeakerMetrics],
     rag_result: RagResult,
-    llm,
     model_versions: ModelVersions | None = None,
 ) -> ReportDraft:
-    """EXAONE에 프롬프트를 전달하고 반환된 JSON을 ReportDraft로 변환한다.
+    """Bedrock Claude에 프롬프트를 전달하고 반환된 JSON을 ReportDraft로 변환한다.
 
-    JSON 파싱 실패 시 MAX_RETRIES 횟수만큼 재시도한다.
-    모든 시도 실패 시 RuntimeError를 발생시킨다.
+    재시도 및 JSON 파싱은 bedrock_client.invoke_claude()가 처리한다.
     """
+    from app.pipelines.bedrock_client import invoke_claude
+
     prompt = build_report_prompt(utterances, metrics, rag_result)
+    data = invoke_claude(prompt)
+    data = _repair_schema(data)
 
     if model_versions is None:
         model_versions = ModelVersions(
@@ -90,42 +57,25 @@ def generate_report(
             diarization=settings.diarization_model_name,
             asr=settings.asr_model_name,
             embedding=settings.embedding_model_name,
-            llm=settings.llm_model_name,
+            llm=settings.bedrock_report_model_id,
         )
 
-    last_error: Exception | None = None
-    for attempt in range(MAX_RETRIES):
-        raw = llm.predict(prompt)
-        try:
-            data = _extract_json(raw)
-            data = _repair_schema(data)
+    soap_note = SOAPNote(**data["soap_note"])
+    clinical_flags = [
+        ClinicalFlag(**f) for f in data.get("clinical_flags", [])
+        if isinstance(f, dict)
+    ]
+    evidence_ids = [e.chunk_id for e in rag_result.evidence]
 
-            soap_note = SOAPNote(**data["soap_note"])
-
-            clinical_flags = [
-                ClinicalFlag(**f) for f in data.get("clinical_flags", [])
-                if isinstance(f, dict)
-            ]
-
-            evidence_ids = [e.chunk_id for e in rag_result.evidence]
-
-            return ReportDraft(
-                report_id=str(uuid.uuid4()),
-                job_id=job_id,
-                session_id=session_id,
-                model_versions=model_versions,
-                soap_note=soap_note,
-                clinical_flags=clinical_flags,
-                recommended_review_points=data.get("recommended_review_points", []),
-                evidence_chunk_ids=evidence_ids,
-            )
-
-        except Exception as e:
-            last_error = e
-            continue
-
-    raise RuntimeError(
-        f"리포트 생성 {MAX_RETRIES}회 시도 모두 실패. 마지막 오류: {last_error}"
+    return ReportDraft(
+        report_id=str(uuid.uuid4()),
+        job_id=job_id,
+        session_id=session_id,
+        model_versions=model_versions,
+        soap_note=soap_note,
+        clinical_flags=clinical_flags,
+        recommended_review_points=data.get("recommended_review_points", []),
+        evidence_chunk_ids=evidence_ids,
     )
 
 
