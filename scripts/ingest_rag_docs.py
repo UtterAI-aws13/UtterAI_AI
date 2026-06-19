@@ -74,6 +74,35 @@ DOC_METADATA: dict[str, dict] = {
         "clinical_task": ["assessment"],
         "assessment_tool": ["PRES", "SELSI", "REVT", "U-TAP2", "APAC", "K-ALAS", "LSSC", "KOPLAC"],
     },
+    # ── P1 임상 가이드 보완 (docs/rag/*.txt) ─────────────────────────────────
+    "doc_fluency_guide": {
+        "age_group": "all",
+        "language_area": ["fluency", "pragmatics"],
+        "metric": ["percent_ss", "sld_ratio"],
+        "clinical_task": ["assessment", "report_generation", "goal_writing", "intervention"],
+        "assessment_tool": ["P-FA-II", "OASES"],
+    },
+    "doc_school_age_guide": {
+        "age_group": "school_age",
+        "language_area": ["expressive_language", "receptive_language", "narrative_discourse", "phonology"],
+        "metric": ["mlu_morpheme", "ndw"],
+        "clinical_task": ["assessment", "report_generation", "goal_writing", "intervention"],
+        "assessment_tool": ["LSSC", "KOLRA", "KOPLAC"],
+    },
+    "doc_receptive_language_guide": {
+        "age_group": "preschool",
+        "language_area": ["receptive_language"],
+        "metric": [],
+        "clinical_task": ["assessment", "report_generation", "goal_writing", "intervention"],
+        "assessment_tool": ["PRES", "REVT", "SELSI"],
+    },
+    "doc_goal_writing_guide": {
+        "age_group": "all",
+        "language_area": ["clinical_documentation", "functional_communication"],
+        "metric": [],
+        "clinical_task": ["goal_writing", "report_generation"],
+        "assessment_tool": [],
+    },
     # ── 연구 논문 (docs/papers/*.pdf) ────────────────────────────────────────
     "doc_asd_slp_subjectivity": {
         "age_group": "preschool",
