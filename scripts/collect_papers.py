@@ -180,31 +180,39 @@ def fetch_semantic_scholar(queries: list[str], limit: int) -> list[dict]:
 
     fields = "title,abstract,year,externalIds"
     for query in queries:
-        try:
-            r = requests.get(
-                "https://api.semanticscholar.org/graph/v1/paper/search",
-                params={"query": query, "limit": limit, "fields": fields},
-                headers=headers,
-                timeout=20,
-            )
-            r.raise_for_status()
-            for paper in r.json().get("data", []):
-                pid = paper.get("paperId", "")
-                if pid in seen_ids or not paper.get("abstract"):
+        for attempt in range(3):
+            try:
+                time.sleep(1.0 if not api_key else 0.5)
+                r = requests.get(
+                    "https://api.semanticscholar.org/graph/v1/paper/search",
+                    params={"query": query, "limit": limit, "fields": fields},
+                    headers=headers,
+                    timeout=20,
+                )
+                if r.status_code == 429:
+                    wait = 5 * (attempt + 1)
+                    log.warning("Semantic Scholar 429 — %d초 후 재시도 (attempt %d/3)", wait, attempt + 1)
+                    time.sleep(wait)
                     continue
-                seen_ids.add(pid)
-                ext = paper.get("externalIds") or {}
-                doi = normalize_doi(ext.get("DOI", "") or "")
-                results.append({
-                    "source": "semantic_scholar",
-                    "doi": doi,
-                    "title": paper.get("title", "").strip(),
-                    "abstract": paper.get("abstract", "").strip(),
-                    "year": paper.get("year"),
-                })
-            time.sleep(1.0 if not api_key else 0.2)
-        except Exception as e:
-            log.warning("Semantic Scholar 오류 (query=%s): %s", query, e)
+                r.raise_for_status()
+                for paper in r.json().get("data", []):
+                    pid = paper.get("paperId", "")
+                    if pid in seen_ids or not paper.get("abstract"):
+                        continue
+                    seen_ids.add(pid)
+                    ext = paper.get("externalIds") or {}
+                    doi = normalize_doi(ext.get("DOI", "") or "")
+                    results.append({
+                        "source": "semantic_scholar",
+                        "doi": doi,
+                        "title": paper.get("title", "").strip(),
+                        "abstract": paper.get("abstract", "").strip(),
+                        "year": paper.get("year"),
+                    })
+                break
+            except Exception as e:
+                log.warning("Semantic Scholar 오류 (query=%s): %s", query, e)
+                break
 
     log.info("Semantic Scholar: %d편 수집", len(results))
     return results
