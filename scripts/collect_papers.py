@@ -427,7 +427,7 @@ def main():
     args = parser.parse_args()
 
     bedrock_region = os.environ.get("BEDROCK_REGION") or os.environ.get("AWS_REGION", "ap-northeast-2")
-    bedrock_model = os.environ.get("BEDROCK_PAPER_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
+    bedrock_model = os.environ.get("BEDROCK_PAPER_MODEL_ID", "global.anthropic.claude-haiku-4-5-20251001-v1:0")
 
     seen_dois = load_seen_dois()
     paper_metadata = load_paper_metadata()
