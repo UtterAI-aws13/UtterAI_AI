@@ -1,7 +1,7 @@
 """
 논문 수집 배치 스크립트.
 
-5개 API에서 한국어 언어재활 관련 논문 메타데이터를 수집한다.
+3개 API에서 한국어 언어재활 관련 논문 메타데이터를 수집한다.
 월 1회 배치로 실행하며, DOI 기준으로 중복을 제거한다.
 
 흐름:
@@ -18,11 +18,9 @@
   python scripts/collect_papers.py --skip-bedrock   # 메타데이터 추출 건너뜀
 
 필요 환경 변수 (.env):
-  PUBMED_EMAIL            PubMed polite access용 이메일 (필수)
-  PUBMED_API_KEY          PubMed API key (선택)
-  SEMANTIC_SCHOLAR_API_KEY  Semantic Scholar API key (선택)
-  RISS_API_KEY            RISS Open API key (선택)
-  DBPIA_API_KEY           DBpia API key (선택)
+  PUBMED_EMAIL              PubMed polite access용 이메일 (필수)
+  PUBMED_API_KEY            PubMed API key (선택)
+  SEMANTIC_SCHOLAR_API_KEY  Semantic Scholar API key (선택, 없으면 1 req/s)
   AWS_REGION / BEDROCK_REGION  Bedrock 리전
 """
 import argparse
@@ -70,20 +68,6 @@ SEMANTIC_SCHOLAR_QUERIES = [
     "Korean stuttering fluency intervention",
     "Korean aphasia assessment CIU discourse",
     "DLD developmental language disorder Korean",
-]
-
-RISS_QUERIES = [
-    "언어재활 아동 언어발달",
-    "말더듬 중재 아동",
-    "실어증 평가 성인",
-    "언어표본분석 MLU",
-    "조음장애 중재",
-]
-
-DBPIA_QUERIES = [
-    "언어재활 아동",
-    "말더듬 평가",
-    "언어발달지연 중재",
 ]
 
 
@@ -223,114 +207,6 @@ def fetch_semantic_scholar(queries: list[str], limit: int) -> list[dict]:
             log.warning("Semantic Scholar 오류 (query=%s): %s", query, e)
 
     log.info("Semantic Scholar: %d편 수집", len(results))
-    return results
-
-
-# ── RISS ──────────────────────────────────────────────────────────────────────
-
-def fetch_riss(queries: list[str], limit: int) -> list[dict]:
-    try:
-        import requests
-    except ImportError:
-        log.warning("requests 미설치 — RISS 건너뜀")
-        return []
-
-    api_key = os.environ.get("RISS_API_KEY", "")
-    if not api_key:
-        log.warning("RISS_API_KEY 미설정 — RISS 건너뜀")
-        return []
-
-    results: list[dict] = []
-    seen_ids: set[str] = set()
-
-    for query in queries:
-        try:
-            r = requests.get(
-                "https://openapi.riss.kr/api/search",
-                params={
-                    "key": api_key,
-                    "query": query,
-                    "display": limit,
-                    "category": "저널",
-                    "isFullText": "N",
-                    "output": "json",
-                },
-                timeout=20,
-            )
-            r.raise_for_status()
-            data = r.json()
-            for item in data.get("resultList", []):
-                riss_id = item.get("control_no", "")
-                if riss_id in seen_ids:
-                    continue
-                seen_ids.add(riss_id)
-                abstract = item.get("abstract", "") or item.get("summary", "") or ""
-                if not abstract:
-                    continue
-                doi = normalize_doi(item.get("doi", "") or "")
-                results.append({
-                    "source": "riss",
-                    "doi": doi,
-                    "riss_id": riss_id,
-                    "title": item.get("title_name", "").strip(),
-                    "abstract": abstract.strip(),
-                    "year": item.get("pub_year"),
-                })
-            time.sleep(0.5)
-        except Exception as e:
-            log.warning("RISS 오류 (query=%s): %s", query, e)
-
-    log.info("RISS: %d편 수집", len(results))
-    return results
-
-
-# ── DBpia ─────────────────────────────────────────────────────────────────────
-
-def fetch_dbpia(queries: list[str], limit: int) -> list[dict]:
-    try:
-        import requests
-    except ImportError:
-        log.warning("requests 미설치 — DBpia 건너뜀")
-        return []
-
-    api_key = os.environ.get("DBPIA_API_KEY", "")
-    if not api_key:
-        log.warning("DBPIA_API_KEY 미설정 — DBpia 건너뜀")
-        return []
-
-    results: list[dict] = []
-    seen_ids: set[str] = set()
-
-    for query in queries:
-        try:
-            r = requests.get(
-                "https://api.dbpia.co.kr/v2/search/articles",
-                params={"query": query, "pageSize": limit, "apiKey": api_key},
-                timeout=20,
-            )
-            r.raise_for_status()
-            for item in r.json().get("result", {}).get("article", []):
-                article_id = item.get("articleId", "")
-                if article_id in seen_ids:
-                    continue
-                seen_ids.add(article_id)
-                abstract = item.get("abstractKo", "") or item.get("abstractEn", "") or ""
-                if not abstract:
-                    continue
-                doi = normalize_doi(item.get("doi", "") or "")
-                results.append({
-                    "source": "dbpia",
-                    "doi": doi,
-                    "dbpia_id": article_id,
-                    "title": (item.get("titleKo") or item.get("titleEn") or "").strip(),
-                    "abstract": abstract.strip(),
-                    "year": item.get("publishYear"),
-                })
-            time.sleep(0.5)
-        except Exception as e:
-            log.warning("DBpia 오류 (query=%s): %s", query, e)
-
-    log.info("DBpia: %d편 수집", len(results))
     return results
 
 
@@ -527,8 +403,6 @@ def main():
     all_papers: list[dict] = []
     all_papers += fetch_pubmed(PUBMED_QUERIES, args.limit)
     all_papers += fetch_semantic_scholar(SEMANTIC_SCHOLAR_QUERIES, args.limit)
-    all_papers += fetch_riss(RISS_QUERIES, args.limit)
-    all_papers += fetch_dbpia(DBPIA_QUERIES, args.limit)
 
     log.info("전체 수집: %d편 (중복 제거 전)", len(all_papers))
 
