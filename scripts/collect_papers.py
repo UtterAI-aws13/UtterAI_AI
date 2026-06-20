@@ -279,6 +279,37 @@ clinical_task (해당하는 것 모두, 배열):
 {{"age_group": "preschool", "language_area": ["expressive_language", "morphosyntax"], "metric": ["mlu_morpheme"], "clinical_task": ["assessment"]}}
 """
 
+_TRANSLATE_PROMPT = """\
+다음 언어재활 논문의 제목과 영어 초록을 한국어로 번역하세요.
+전문 임상 용어(MLU, PCC, CIU, DLD 등 약어)는 그대로 유지하세요.
+번역문만 출력하고 다른 설명은 쓰지 마세요.
+
+제목: {title}
+
+영어 초록:
+{abstract}
+"""
+
+
+def translate_abstract_with_bedrock(title: str, abstract: str, model_id: str, region: str) -> str:
+    try:
+        import boto3
+
+        client = boto3.client("bedrock-runtime", region_name=region)
+        body = json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 1024,
+            "messages": [{
+                "role": "user",
+                "content": _TRANSLATE_PROMPT.format(title=title, abstract=abstract[:2000]),
+            }],
+        })
+        resp = client.invoke_model(modelId=model_id, body=body)
+        return json.loads(resp["body"].read())["content"][0]["text"].strip()
+    except Exception as e:
+        log.warning("Bedrock 번역 실패, 원문 사용: %s", e)
+        return abstract
+
 
 def extract_metadata_with_bedrock(title: str, abstract: str, model_id: str, region: str) -> dict:
     try:
@@ -319,7 +350,7 @@ def _safe_filename(text: str, max_len: int = 40) -> str:
     return text[:max_len]
 
 
-def save_paper_as_txt(paper: dict, metadata: dict) -> Path:
+def save_paper_as_txt(paper: dict, metadata: dict, abstract_ko: str = "") -> Path:
     doc_id = doi_to_doc_id(paper["doi"]) if paper.get("doi") else f"doc_paper_{paper['source']}_{int(time.time())}"
     title_safe = _safe_filename(paper["title"])
     filename = f"{doc_id}__{title_safe}.txt"
@@ -333,7 +364,12 @@ def save_paper_as_txt(paper: dict, metadata: dict) -> Path:
         content_lines.append(f"출판연도: {paper['year']}")
     if paper.get("doi"):
         content_lines.append(f"DOI: {paper['doi']}")
-    content_lines += ["", "## 초록", "", paper["abstract"]]
+
+    if abstract_ko and abstract_ko != paper["abstract"]:
+        content_lines += ["", "## 초록 (한국어)", "", abstract_ko,
+                          "", "## Abstract (원문)", "", paper["abstract"]]
+    else:
+        content_lines += ["", "## 초록", "", paper["abstract"]]
 
     filepath.write_text("\n".join(content_lines), encoding="utf-8")
     return filepath
@@ -430,17 +466,22 @@ def main():
             log.debug("초록 없음, 건너뜀: %s", paper["title"][:60])
             continue
 
-        # Bedrock으로 메타데이터 추출
+        # Bedrock으로 번역 + 메타데이터 추출
         if args.skip_bedrock:
+            abstract_ko = paper["abstract"]
             extracted = {"age_group": "all", "language_area": [], "metric": [], "clinical_task": ["assessment"]}
         else:
-            log.info("메타데이터 추출 중: %s", paper["title"][:60])
-            extracted = extract_metadata_with_bedrock(
+            log.info("번역 중: %s", paper["title"][:60])
+            abstract_ko = translate_abstract_with_bedrock(
                 paper["title"], paper["abstract"], bedrock_model, bedrock_region
             )
+            log.info("메타데이터 추출 중: %s", paper["title"][:60])
+            extracted = extract_metadata_with_bedrock(
+                paper["title"], abstract_ko, bedrock_model, bedrock_region
+            )
 
-        # txt 파일 저장
-        filepath = save_paper_as_txt(paper, extracted)
+        # txt 파일 저장 (한국어 번역 초록 포함)
+        filepath = save_paper_as_txt(paper, extracted, abstract_ko=abstract_ko)
 
         # doc_id 확정
         doc_id = filepath.stem.split("__")[0]
