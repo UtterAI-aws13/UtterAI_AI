@@ -28,8 +28,9 @@ from app.config import settings
 ROOT = Path(__file__).parent.parent
 
 SCAN_TARGETS = [
-    (ROOT / "docs" / "rag",    "clinical_guide",  ("*.txt",)),
-    (ROOT / "docs" / "papers", "research_paper",  ("*.pdf",)),
+    (ROOT / "docs" / "rag",    "clinical_guide",    ("*.txt",)),
+    (ROOT / "docs" / "papers", "research_paper",    ("*.pdf",)),
+    (ROOT / "docs" / "papers", "research_abstract", ("*.txt",)),
 ]
 
 S3_PREFIX = "documents"
@@ -145,7 +146,7 @@ DOC_METADATA: dict[str, dict] = {
         "clinical_task": ["goal_writing", "report_generation"],
         "assessment_tool": [],
     },
-    # ── 연구 논문 (docs/papers/*.pdf) ────────────────────────────────────────
+    # ── 연구 논문 (docs/papers/*.pdf / *.txt) ────────────────────────────────
     "doc_asd_slp_subjectivity": {
         "age_group": "preschool",
         "language_area": ["pragmatics"],
@@ -168,6 +169,27 @@ DOC_METADATA: dict[str, dict] = {
         "assessment_tool": ["K-ALAS"],
     },
 }
+
+
+def _load_paper_metadata() -> None:
+    """docs/papers/paper_metadata.json에서 논문 메타데이터를 읽어 DOC_METADATA에 병합한다."""
+    paper_metadata_file = ROOT / "docs" / "papers" / "paper_metadata.json"
+    if not paper_metadata_file.exists():
+        return
+    data: dict = json.loads(paper_metadata_file.read_text())
+    for doc_id, meta in data.items():
+        if doc_id not in DOC_METADATA:
+            DOC_METADATA[doc_id] = {
+                "source_type": meta.get("source_type", "research_abstract"),
+                "age_group": meta.get("age_group", "all"),
+                "language_area": meta.get("language_area", []),
+                "metric": meta.get("metric", []),
+                "clinical_task": meta.get("clinical_task", []),
+                "assessment_tool": meta.get("assessment_tool", []),
+            }
+
+
+_load_paper_metadata()
 
 
 def _parse_filename(stem: str) -> tuple[str, str]:
