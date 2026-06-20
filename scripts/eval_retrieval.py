@@ -165,7 +165,8 @@ async def run_eval():
     print(f"필터 오염 케이스 : {contamination_count}/{len(results)}  (목표 0개)    {'✅' if contamination_count == 0 else '❌'}")
     print(f"{'=' * 80}\n")
 
-    _save_charts(results, avg_recall, avg_precision, mrr, contamination_count)
+    chart_path = _save_charts(results, avg_recall, avg_precision, mrr, contamination_count)
+    _update_eval_log(results, avg_recall, avg_precision, mrr, contamination_count, chart_path)
 
 
 def _save_charts(results: list, avg_recall: float, avg_precision: float, mrr: float, contamination_count: int) -> None:
@@ -254,6 +255,62 @@ def _save_charts(results: list, avg_recall: float, avg_precision: float, mrr: fl
     plt.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"차트 저장: {out_path}")
+    return out_path
+
+
+def _update_eval_log(
+    results: list,
+    avg_recall: float,
+    avg_precision: float,
+    mrr: float,
+    contamination_count: int,
+    chart_path: Path,
+) -> None:
+    log_path = CHART_DIR / "EVAL_LOG.md"
+    run_time = datetime.now().strftime("%Y-%m-%d %H:%M")
+    chart_filename = chart_path.name
+
+    # 케이스별 변화 요약 (빨강/주황만 표시)
+    problem_lines = []
+    for r in results:
+        if r["recall"] < 1.0 or r["contaminated"]:
+            flag = "🔴" if r["recall"] == 0.0 else "🟠"
+            problem_lines.append(
+                f"  - {flag} {r['query'][:40]} — Recall {r['recall']:.2f}, MRR {r['rr']:.2f}"
+            )
+    problems_block = "\n".join(problem_lines) if problem_lines else "  - 없음 (전 케이스 정상)"
+
+    new_entry = f"""---
+
+## 평가 — {run_time}
+
+![차트]({chart_filename})
+
+| 지표 | 결과 | 목표 | 판정 |
+|---|---|---|---|
+| Recall@5 | **{avg_recall:.3f}** | ≥ 0.80 | {'✅' if avg_recall >= 0.80 else '❌'} |
+| Precision@5 | {avg_precision:.3f} | ≥ 0.60 | {'✅' if avg_precision >= 0.60 else '❌'} |
+| MRR | **{mrr:.3f}** | ≥ 0.70 | {'✅' if mrr >= 0.70 else '❌'} |
+| 필터 오염 | {contamination_count}/8 | 0% | {'✅' if contamination_count == 0 else '❌'} |
+
+**주의 케이스**
+{problems_block}
+
+"""
+
+    if log_path.exists():
+        existing = log_path.read_text(encoding="utf-8")
+        # 헤더 블록(첫 번째 --- 앞) 보존, 그 뒤에 새 항목 삽입
+        if "\n---\n" in existing:
+            header, rest = existing.split("\n---\n", 1)
+            updated = header + "\n" + new_entry + "---\n" + rest
+        else:
+            updated = existing + "\n" + new_entry
+    else:
+        updated = new_entry
+
+    log_path.write_text(updated, encoding="utf-8")
+    print(f"평가 로그 업데이트: {log_path}")
 
 
 if __name__ == "__main__":
