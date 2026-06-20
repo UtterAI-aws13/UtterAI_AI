@@ -182,7 +182,7 @@ def fetch_semantic_scholar(queries: list[str], limit: int) -> list[dict]:
     for query in queries:
         for attempt in range(3):
             try:
-                time.sleep(1.0 if not api_key else 0.5)
+                time.sleep(2.0)
                 r = requests.get(
                     "https://api.semanticscholar.org/graph/v1/paper/search",
                     params={"query": query, "limit": limit, "fields": fields},
