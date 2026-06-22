@@ -199,10 +199,9 @@ async def save_report(
     report_id = str(uuid.uuid4())
     now = datetime.now(UTC)
 
-    template_id_param = f"CAST(:template_id AS uuid)" if template_id else "NULL"
     if template_id:
         await db.execute(
-            text(f"""
+            text("""
                 INSERT INTO reports
                     (id, session_id, job_id, template_id, status, model_used, clinical_flags,
                      evidence_chunk_ids, requires_human_review, generated_at, updated_at)
