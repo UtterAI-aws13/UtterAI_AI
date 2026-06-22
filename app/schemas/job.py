@@ -117,3 +117,4 @@ class ReportJobMessage(BaseModel):
     job_id: str
     session_id: str
     transcript_id: str
+    template_id: str | None = None

@@ -186,19 +186,53 @@ async def run_bedrock_report_stage(
         logger.info(f"[{job_id}] REPORT STAGE: RAG 완료 evidence={len(evidence)}")
 
         logger.info(f"[{job_id}] REPORT STAGE: BEDROCK 호출 시작 model={settings.bedrock_report_model_id}")
-        prompt = build_bedrock_report_prompt(
-            metrics=metrics,
-            utterances=patient_utterances or all_utterances,
-            session=session,
-            evidence=evidence,
-        )
+
+        template_id = message.template_id
+        template_sections = None
+        if template_id:
+            from app.storage.rds import get_template_sections
+            from app.rag.prompt_templates import build_template_report_prompt
+            logger.info(f"[{job_id}] REPORT STAGE: 템플릿 섹션 조회 template_id={template_id}")
+            template_sections = await get_template_sections(db, template_id)
+            logger.info(f"[{job_id}] REPORT STAGE: 템플릿 섹션 {len(template_sections) if template_sections else 0}개")
+
+        if template_sections:
+            prompt = build_template_report_prompt(
+                metrics=metrics,
+                utterances=patient_utterances or all_utterances,
+                session=session,
+                evidence=evidence,
+                sections=template_sections,
+            )
+        else:
+            prompt = build_bedrock_report_prompt(
+                metrics=metrics,
+                utterances=patient_utterances or all_utterances,
+                session=session,
+                evidence=evidence,
+            )
+
         logger.debug(f"[{job_id}] REPORT STAGE: prompt_len={len(prompt)}")
         report_data = invoke_claude(prompt)
         logger.info(f"[{job_id}] REPORT STAGE: BEDROCK 호출 완료 keys={list(report_data.keys())}")
 
-        soap_note = report_data.get("soap_note", {})
         clinical_flags = report_data.get("clinical_flags", [])
         evidence_chunk_ids = [e.get("chunk_id", "") for e in evidence if isinstance(e, dict)]
+
+        custom_sections_to_save = None
+        soap_note = {}
+        if template_sections:
+            raw_sections = report_data.get("sections", {})
+            custom_sections_to_save = [
+                {
+                    "key": s.get("key", ""),
+                    "title": s.get("title", s.get("key", "")),
+                    "content": raw_sections.get(s.get("key", ""), ""),
+                }
+                for s in template_sections
+            ]
+        else:
+            soap_note = report_data.get("soap_note", {})
 
         logger.info(f"[{job_id}] REPORT STAGE: SAVING")
         report_saved = False
@@ -210,6 +244,8 @@ async def run_bedrock_report_stage(
             clinical_flags=clinical_flags,
             evidence_chunk_ids=evidence_chunk_ids,
             model_used=settings.bedrock_report_model_id,
+            template_id=template_id,
+            custom_sections=custom_sections_to_save,
         )
         report_saved = True
         await update_session_status(db, session_id, "REPORT_READY")
