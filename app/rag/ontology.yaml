@@ -443,3 +443,124 @@ concepts:
     language_area:
       - "functional_communication"
       - "clinical_documentation"
+
+  DLD:
+    ko: "발달성 언어장애"
+    related_terms:
+      - "Developmental Language Disorder"
+      - "언어발달지연"
+      - "후기 말문"
+      - "말 늦은 아동"
+      - "언어 학습 어려움"
+      - "문법 오류"
+      - "가족력"
+      - "지속적 언어 어려움"
+    language_area:
+      - "expressive_language"
+      - "receptive_language"
+      - "morphosyntax"
+
+  milieu_teaching:
+    ko: "환경중심언어중재"
+    related_terms:
+      - "Milieu Teaching"
+      - "우발교수"
+      - "시간지연"
+      - "자연적 강화"
+      - "아동 주도"
+      - "모델링"
+      - "확장"
+      - "보호자 코칭"
+    language_area:
+      - "expressive_language"
+      - "receptive_language"
+      - "pragmatics"
+
+  TBI:
+    ko: "외상성 뇌손상"
+    related_terms:
+      - "Traumatic Brain Injury"
+      - "인지-의사소통"
+      - "집행기능"
+      - "자기인식"
+      - "메타인지"
+      - "미래 기억"
+      - "직장 복귀"
+      - "보상 전략"
+    language_area:
+      - "cognitive_communication"
+      - "pragmatics"
+      - "functional_communication"
+
+  dementia:
+    ko: "치매"
+    related_terms:
+      - "인지 저하"
+      - "경도인지장애"
+      - "MCI"
+      - "알츠하이머병"
+      - "반복 질문"
+      - "기억 보조"
+      - "의사소통 파트너"
+      - "진행성 언어 변화"
+    language_area:
+      - "cognitive_communication"
+      - "receptive_language"
+      - "expressive_language"
+
+  dysarthria:
+    ko: "마비말장애"
+    related_terms:
+      - "말 명료도"
+      - "이해가능성"
+      - "호흡"
+      - "발성"
+      - "조음"
+      - "공명"
+      - "운율"
+      - "이완형"
+      - "경직형"
+      - "실조형"
+      - "저운동형"
+      - "과운동형"
+    metrics:
+      - "speech_intelligibility"
+      - "comprehensible_wpm"
+    language_area:
+      - "motor_speech"
+      - "functional_communication"
+
+  FCM:
+    ko: "기능적 의사소통 척도"
+    related_terms:
+      - "Functional Communication Measure"
+      - "ASHA NOMS"
+      - "기능적 결과"
+      - "활동 참여"
+      - "지원 수준"
+      - "의사소통 독립성"
+    metrics:
+      - "fcm"
+    language_area:
+      - "functional_communication"
+      - "clinical_documentation"
+
+  voice_disorder:
+    ko: "음성장애"
+    related_terms:
+      - "쉰 목소리"
+      - "애성"
+      - "음질"
+      - "음도"
+      - "음성 강도"
+      - "발성 노력"
+      - "후두 검사"
+      - "음성위생"
+      - "공명음성"
+      - "VHI"
+    metrics:
+      - "voice_handicap"
+      - "maximum_phonation_time"
+    language_area:
+      - "voice"
+      - "functional_communication"
