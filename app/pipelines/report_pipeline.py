@@ -3,6 +3,7 @@
 #
 # JSON 파싱 및 재시도는 bedrock_client.invoke_claude()가 처리한다.
 # 필수 필드 누락 시 빈 문자열로 채워 schema 오류를 방지한다 (schema repair).
+import json
 import uuid
 from typing import TYPE_CHECKING
 
@@ -145,8 +146,14 @@ async def run_bedrock_report_stage(
 
     try:
         logger.info(f"[{job_id}] REPORT STAGE: LOADING TRANSCRIPT transcript_id={transcript_id}")
-        segments = await get_transcript_segments(db, transcript_id)
-        logger.info(f"[{job_id}] REPORT STAGE: TRANSCRIPT LOADED segments={len(segments)}")
+        if message.final_s3_key:
+            from app.storage.s3_client import get_bytes
+            raw = get_bytes(settings.s3_bucket_transcript, message.final_s3_key)
+            segments = json.loads(raw)
+            logger.info(f"[{job_id}] REPORT STAGE: TRANSCRIPT LOADED FROM S3 key={message.final_s3_key} segments={len(segments)}")
+        else:
+            segments = await get_transcript_segments(db, transcript_id)
+            logger.info(f"[{job_id}] REPORT STAGE: TRANSCRIPT LOADED FROM RDS segments={len(segments)}")
         if not segments:
             logger.warning(f"[{job_id}] REPORT STAGE: transcript_segments 비어있음 — transcript_id={transcript_id}")
 

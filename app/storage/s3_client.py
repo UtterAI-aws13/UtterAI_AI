@@ -15,3 +15,9 @@ def upload(local_path: str, bucket: str, key: str) -> None:
 def download(bucket: str, key: str, local_path: str) -> None:
     """S3 파일을 로컬에 다운로드한다."""
     s3.download_file(bucket, key, local_path)
+
+
+def get_bytes(bucket: str, key: str) -> bytes:
+    """S3 오브젝트를 bytes로 직접 읽는다."""
+    response = s3.get_object(Bucket=bucket, Key=key)
+    return response["Body"].read()
