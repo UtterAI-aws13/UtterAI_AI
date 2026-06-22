@@ -354,3 +354,6 @@ tmp/
 *.m4a
 
 **/.claude
+
+# 논문 원본 (로컬 전용)
+docs/papers/
