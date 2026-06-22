@@ -232,7 +232,7 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> 
                     json.dumps([u.model_dump() for u in utterances], ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
-                s3_client.upload(draft_path, settings.s3_bucket_report, draft_key)
+                s3_client.upload(draft_path, settings.s3_bucket_transcript, draft_key)
                 await save_transcript_draft(
                     db, job_id, session_id, message.audio_file_id, draft_key, utterances
                 )

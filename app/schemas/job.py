@@ -117,4 +117,5 @@ class ReportJobMessage(BaseModel):
     job_id: str
     session_id: str
     transcript_id: str
+    final_s3_key: str | None = None
     template_id: str | None = None
