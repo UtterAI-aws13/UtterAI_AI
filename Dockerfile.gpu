@@ -23,6 +23,8 @@ COPY app ./app
 ENV PYTHONPATH=/app
 ENV PATH="/app/.venv/bin:$PATH"
 
+RUN adduser --disabled-password --uid 1000 appuser
+USER 1000
 
 # ml-gpu-worker 기본값. llm-gpu-worker는 K8s Deployment command로 오버라이드.
 CMD ["python", "-m", "app.workers.ml_gpu_worker"]
