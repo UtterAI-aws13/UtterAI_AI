@@ -156,6 +156,28 @@ async def get_session_context(
     }
 
 
+async def get_template_sections(
+    db: AsyncSession,
+    template_id: str,
+) -> list[dict] | None:
+    """templates.sections_json에서 섹션 목록을 조회한다.
+
+    반환 형식: [{"key": str, "title": str, "description": str | None}, ...]
+    sections_json이 없거나 섹션 목록을 찾을 수 없으면 None을 반환한다.
+    """
+    result = await db.execute(
+        text("SELECT sections_json FROM templates WHERE id = CAST(:template_id AS uuid)"),
+        {"template_id": template_id},
+    )
+    row = result.first()
+    if row is None or row[0] is None:
+        return None
+    sections_json = row[0]
+    if not isinstance(sections_json, dict):
+        return None
+    return sections_json.get("sections") or None
+
+
 async def save_report(
     db: AsyncSession,
     job_id: str,
@@ -164,57 +186,111 @@ async def save_report(
     clinical_flags: list,
     evidence_chunk_ids: list,
     model_used: str,
+    template_id: str | None = None,
+    custom_sections: list[dict] | None = None,
 ) -> str:
-    """reports + report_segments rows를 삽입하고 report_id를 반환한다."""
+    """reports + report_segments rows를 삽입하고 report_id를 반환한다.
+
+    custom_sections가 주어지면 템플릿 섹션 기반으로 CUSTOM 세그먼트를 저장한다.
+    각 항목 형식: {"key": str, "title": str, "content": str}
+    그렇지 않으면 기본 SOAP 4개 세그먼트를 저장한다.
+    """
+    import json as _json
     report_id = str(uuid.uuid4())
     now = datetime.now(UTC)
 
-    await db.execute(
-        text("""
-            INSERT INTO reports
-                (id, session_id, job_id, status, model_used, clinical_flags,
-                 evidence_chunk_ids, requires_human_review, generated_at, updated_at)
-            VALUES
-                (CAST(:id AS uuid), CAST(:session_id AS uuid), CAST(:job_id AS uuid),
-                 'DRAFT', :model_used, CAST(:clinical_flags AS jsonb),
-                 CAST(:evidence_chunk_ids AS jsonb), true, :now, :now)
-        """),
-        {
-            "id": report_id,
-            "session_id": session_id,
-            "job_id": job_id,
-            "model_used": model_used,
-            "clinical_flags": __import__("json").dumps(clinical_flags),
-            "evidence_chunk_ids": __import__("json").dumps(evidence_chunk_ids),
-            "now": now,
-        },
-    )
-
-    soap_map = [
-        ("SUBJECTIVE", soap_note.get("subjective", "")),
-        ("OBJECTIVE",  soap_note.get("objective",  "")),
-        ("ASSESSMENT", soap_note.get("assessment", "")),
-        ("PLAN",       soap_note.get("plan",       "")),
-    ]
-    for idx, (seg_type, content) in enumerate(soap_map):
+    template_id_param = f"CAST(:template_id AS uuid)" if template_id else "NULL"
+    if template_id:
         await db.execute(
-            text("""
-                INSERT INTO report_segments
-                    (id, report_id, segment_type, segment_index, ai_content, content, is_edited, created_at)
+            text(f"""
+                INSERT INTO reports
+                    (id, session_id, job_id, template_id, status, model_used, clinical_flags,
+                     evidence_chunk_ids, requires_human_review, generated_at, updated_at)
                 VALUES
-                    (CAST(:id AS uuid), CAST(:report_id AS uuid),
-                     CAST(:segment_type AS report_segment_type),
-                     :segment_index, :content, :content, false, :now)
+                    (CAST(:id AS uuid), CAST(:session_id AS uuid), CAST(:job_id AS uuid),
+                     CAST(:template_id AS uuid),
+                     'DRAFT', :model_used, CAST(:clinical_flags AS jsonb),
+                     CAST(:evidence_chunk_ids AS jsonb), true, :now, :now)
             """),
             {
-                "id": str(uuid.uuid4()),
-                "report_id": report_id,
-                "segment_type": seg_type,
-                "segment_index": idx,
-                "content": content,
+                "id": report_id,
+                "session_id": session_id,
+                "job_id": job_id,
+                "template_id": template_id,
+                "model_used": model_used,
+                "clinical_flags": _json.dumps(clinical_flags),
+                "evidence_chunk_ids": _json.dumps(evidence_chunk_ids),
                 "now": now,
             },
         )
+    else:
+        await db.execute(
+            text("""
+                INSERT INTO reports
+                    (id, session_id, job_id, status, model_used, clinical_flags,
+                     evidence_chunk_ids, requires_human_review, generated_at, updated_at)
+                VALUES
+                    (CAST(:id AS uuid), CAST(:session_id AS uuid), CAST(:job_id AS uuid),
+                     'DRAFT', :model_used, CAST(:clinical_flags AS jsonb),
+                     CAST(:evidence_chunk_ids AS jsonb), true, :now, :now)
+            """),
+            {
+                "id": report_id,
+                "session_id": session_id,
+                "job_id": job_id,
+                "model_used": model_used,
+                "clinical_flags": _json.dumps(clinical_flags),
+                "evidence_chunk_ids": _json.dumps(evidence_chunk_ids),
+                "now": now,
+            },
+        )
+
+    if custom_sections:
+        for idx, section in enumerate(custom_sections):
+            await db.execute(
+                text("""
+                    INSERT INTO report_segments
+                        (id, report_id, segment_type, segment_index, title, ai_content, content, is_edited, created_at)
+                    VALUES
+                        (CAST(:id AS uuid), CAST(:report_id AS uuid),
+                         CAST('CUSTOM' AS report_segment_type),
+                         :segment_index, :title, :content, :content, false, :now)
+                """),
+                {
+                    "id": str(uuid.uuid4()),
+                    "report_id": report_id,
+                    "segment_index": idx,
+                    "title": section.get("title", section.get("key", f"섹션 {idx + 1}")),
+                    "content": section.get("content", ""),
+                    "now": now,
+                },
+            )
+    else:
+        soap_map = [
+            ("SUBJECTIVE", soap_note.get("subjective", "")),
+            ("OBJECTIVE",  soap_note.get("objective",  "")),
+            ("ASSESSMENT", soap_note.get("assessment", "")),
+            ("PLAN",       soap_note.get("plan",       "")),
+        ]
+        for idx, (seg_type, content) in enumerate(soap_map):
+            await db.execute(
+                text("""
+                    INSERT INTO report_segments
+                        (id, report_id, segment_type, segment_index, ai_content, content, is_edited, created_at)
+                    VALUES
+                        (CAST(:id AS uuid), CAST(:report_id AS uuid),
+                         CAST(:segment_type AS report_segment_type),
+                         :segment_index, :content, :content, false, :now)
+                """),
+                {
+                    "id": str(uuid.uuid4()),
+                    "report_id": report_id,
+                    "segment_type": seg_type,
+                    "segment_index": idx,
+                    "content": content,
+                    "now": now,
+                },
+            )
 
     await db.commit()
     return report_id
