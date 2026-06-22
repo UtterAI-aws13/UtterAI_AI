@@ -173,8 +173,6 @@ def _save_charts(results: list, avg_recall: float, avg_precision: float, mrr: fl
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    import matplotlib.font_manager as fm
-    import numpy as np
 
     plt.rcParams["axes.unicode_minus"] = False
 
