@@ -94,9 +94,15 @@ def start_worker() -> None:
 
         try:
             tracer = trace.get_tracer(__name__)
-            with tracer.start_as_current_span("worker.ml_gpu.message", context=message_context):
+            with tracer.start_as_current_span(
+                "worker.ml_gpu.message",
+                context=message_context,
+                kind=trace.SpanKind.CONSUMER,
+            ) as span:
                 record_sqs_receive("ml-gpu-worker")
                 msg = MLGpuMessage(**body)
+                span.set_attribute("session_id", msg.session_id)
+                span.set_attribute("job_id", msg.job_id)
 
                 async def _run():
                     async with AsyncSession(get_be_engine()) as session:
