@@ -143,6 +143,7 @@ async def run_bedrock_report_stage(
     job_id = message.job_id
     session_id = message.session_id
     transcript_id = message.transcript_id
+    report_saved = False
 
     try:
         logger.info(f"[{job_id}] REPORT STAGE: LOADING TRANSCRIPT transcript_id={transcript_id}")
@@ -242,7 +243,6 @@ async def run_bedrock_report_stage(
             soap_note = report_data.get("soap_note", {})
 
         logger.info(f"[{job_id}] REPORT STAGE: SAVING")
-        report_saved = False
         await save_report(
             db=db,
             job_id=job_id,
