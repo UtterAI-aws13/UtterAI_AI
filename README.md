@@ -43,7 +43,6 @@
 | 형태소 분석 | `kiwipiepy` | CPU | RAG 키워드 추출 |
 | 임베딩 | `nlpai-lab/KURE-v1` | CPU | 1024차원 |
 | 리포트 생성 | AWS Bedrock Claude Haiku | CPU | `bedrock_client.py` (API 호출, GPU 불필요) |
-| LLM (로컬 대안) | `LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct` | - | `llm_exaone.py` (미사용, 보존) |
 
 > 현재 운영 파이프라인은 Bedrock Claude를 사용합니다. Bedrock는 API 호출이므로 GPU 없이 CPU Worker에서 처리합니다.
 
@@ -60,7 +59,7 @@ app/
 │   ├── audio_preprocess.py    ffmpeg 전처리
 │   ├── alignment.py           VAD+화자분리+ASR 정렬 → Utterance
 │   ├── metrics_pipeline.py    언어 지표 계산
-│   ├── report_pipeline.py     Bedrock/EXAONE SOAP Note 생성
+│   ├── report_pipeline.py     Bedrock Claude SOAP Note 생성
 │   └── bedrock_client.py      AWS Bedrock 호출 클라이언트
 ├── metrics/           언어 지표 순수 함수 (mlu, lexical_diversity, response_latency)
 ├── rag/               RAG 파이프라인 (ingest → pgvector, LangGraph query)

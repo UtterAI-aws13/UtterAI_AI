@@ -1,5 +1,5 @@
 # 리포트 초안 스키마
-# EXAONE이 생성하는 SOAP Note 형식의 임상 기록 초안
+# Bedrock Claude가 생성하는 SOAP Note 형식의 임상 기록 초안
 # 치료사 검토 전까지는 확정 결과로 취급하지 않는다
 from pydantic import BaseModel
 
@@ -41,7 +41,7 @@ class ModelVersions(BaseModel):
 
 
 class ReportDraft(BaseModel):
-    """EXAONE이 생성한 SOAP Note 초안과 부가 정보를 담는 최종 리포트 스키마.
+    """Bedrock Claude가 생성한 SOAP Note 초안과 부가 정보를 담는 최종 리포트 스키마.
 
     requires_human_review는 항상 True여야 한다.
     AI 출력은 반드시 치료사 검토 후에만 임상 기록으로 사용 가능하다.

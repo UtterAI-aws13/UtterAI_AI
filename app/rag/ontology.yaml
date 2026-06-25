@@ -7,6 +7,13 @@ concepts:
       - "문장 길이"
       - "발화 복잡도"
       - "표현언어"
+      - "MLU-w"
+      - "MLU-m"
+      - "MLU-e"
+      - "LLU"
+      - "K-ALAS"
+      - "어절"
+      - "발화 수"
     metrics:
       - "mlu_morpheme"
     language_area:
@@ -20,6 +27,8 @@ concepts:
       - "어휘 다양도"
       - "NDW"
       - "NTW"
+      - "어휘 다양성 지수"
+      - "K-ALAS"
     metrics:
       - "ttr"
       - "ndw"
@@ -106,3 +115,452 @@ concepts:
       - "ttr"
     language_area:
       - "vocabulary"
+
+  LLU:
+    ko: "최장 발화 길이"
+    related_terms:
+      - "최장발화길이"
+      - "발화 복잡도"
+      - "문장 복잡성"
+      - "Longest Length of Utterance"
+      - "LLU-m"
+      - "LLU-w"
+      - "LLU-e"
+    metrics:
+      - "llu_morpheme"
+      - "llu_word"
+    language_area:
+      - "expressive_language"
+
+  PCC:
+    ko: "자음정확도"
+    related_terms:
+      - "자음 정확도"
+      - "조음 정확도"
+      - "말소리 오류"
+      - "음소 오류"
+      - "U-TAP2"
+      - "APAC"
+      - "Percent Consonants Correct"
+      - "조음장애"
+      - "음운변동"
+    metrics:
+      - "pcc"
+    language_area:
+      - "phonology"
+
+  grammatical_morpheme:
+    ko: "문법형태소"
+    related_terms:
+      - "조사 오류"
+      - "어미 오류"
+      - "격조사"
+      - "주격조사"
+      - "목적격조사"
+      - "연결어미"
+      - "종결어미"
+      - "문법형태소 누락"
+      - "형태통사"
+      - "조사 누락"
+      - "어미 누락"
+    language_area:
+      - "morphosyntax"
+
+  turn_taking:
+    ko: "대화 차례"
+    related_terms:
+      - "차례 주고받기"
+      - "발화 교대"
+      - "반응 시작"
+      - "대화 개시"
+      - "화용 상호작용"
+      - "자발 발화"
+      - "Turn-taking"
+    language_area:
+      - "pragmatics"
+
+  CIU:
+    ko: "맥락적 정보 단위"
+    related_terms:
+      - "Correct Information Unit"
+      - "담화 정보량"
+      - "정보 전달 효율성"
+      - "%CIU"
+      - "CIU/min"
+      - "분당 CIU"
+      - "Main Concept Analysis"
+      - "담화 분석"
+    metrics:
+      - "ciu_count"
+      - "ciu_ratio"
+      - "ciu_per_minute"
+    language_area:
+      - "narrative_discourse"
+      - "functional_communication"
+
+  aphasia:
+    ko: "실어증"
+    related_terms:
+      - "Broca 실어증"
+      - "Wernicke 실어증"
+      - "전도성 실어증"
+      - "전반성 실어증"
+      - "명칭 실어증"
+      - "이름대기 장애"
+      - "PK-WAB"
+      - "K-BNT"
+      - "단어 찾기 어려움"
+      - "착어"
+      - "의미착어"
+      - "음운착어"
+      - "신조어"
+      - "우회표현"
+    language_area:
+      - "expressive_language"
+      - "receptive_language"
+
+  cognitive_communication:
+    ko: "인지-의사소통"
+    related_terms:
+      - "TBI"
+      - "외상성 뇌손상"
+      - "치매"
+      - "우반구 손상"
+      - "주의 장애"
+      - "기억 장애"
+      - "집행기능"
+      - "담화 조직화"
+      - "추론"
+      - "인지-의사소통 장애"
+    language_area:
+      - "cognitive_communication"
+
+  motor_speech:
+    ko: "말운동장애"
+    related_terms:
+      - "마비말장애"
+      - "말실행증"
+      - "말 명료도"
+      - "조음 오류"
+      - "말속도"
+      - "운율"
+      - "dysarthria"
+      - "apraxia of speech"
+      - "발성"
+      - "공명"
+      - "호흡 지지"
+    language_area:
+      - "motor_speech"
+
+  narrative_discourse:
+    ko: "이야기 담화"
+    related_terms:
+      - "이야기 문법"
+      - "에피소드 구조"
+      - "이야기 구성"
+      - "담화 능력"
+      - "설명 담화"
+      - "이야기 산출"
+      - "이야기 이해"
+    language_area:
+      - "narrative_discourse"
+
+  AAC:
+    ko: "보완대체의사소통"
+    related_terms:
+      - "Augmentative Alternative Communication"
+      - "그림 교환"
+      - "PECS"
+      - "음성출력기기"
+      - "보완대체 의사소통"
+      - "비구어"
+      - "AAC 도구"
+    language_area:
+      - "aac"
+
+  assessment_tools:
+    ko: "언어평가 도구"
+    related_terms:
+      - "PRES"
+      - "SELSI"
+      - "REVT"
+      - "MCDI-K"
+      - "U-TAP2"
+      - "APAC"
+      - "P-FA"
+      - "K-ALAS"
+      - "KLA"
+      - "LSSC"
+      - "KOPLAC"
+      - "PK-WAB"
+      - "K-BNT"
+    language_area:
+      - "expressive_language"
+      - "receptive_language"
+      - "phonology"
+
+  language_delay:
+    ko: "언어발달지연"
+    related_terms:
+      - "단순언어발달지연"
+      - "발달성 언어장애"
+      - "DLD"
+      - "언어지연"
+      - "말 늦은 아동"
+      - "표현언어 지연"
+      - "수용언어 지연"
+    language_area:
+      - "expressive_language"
+      - "receptive_language"
+
+  ASD:
+    ko: "자폐스펙트럼장애"
+    related_terms:
+      - "자폐 스펙트럼"
+      - "사회적 의사소통"
+      - "공동주의"
+      - "상호작용"
+      - "반향어"
+      - "echolalia"
+      - "화용 어려움"
+    language_area:
+      - "pragmatics"
+
+  eojeol:
+    ko: "어절"
+    related_terms:
+      - "띄어쓰기 단위"
+      - "낱말 단위"
+      - "word unit"
+      - "Korean word"
+      - "어절 수"
+      - "NTJ"
+      - "NDJ"
+    language_area:
+      - "morphosyntax"
+      - "expressive_language"
+
+  case_particle:
+    ko: "격조사"
+    related_terms:
+      - "주격조사"
+      - "목적격조사"
+      - "부사격조사"
+      - "관형격조사"
+      - "처소격조사"
+      - "공동격조사"
+      - "조사 생략"
+      - "조사 대치"
+      - "조사 누락"
+      - "-이/-가"
+      - "-을/-를"
+      - "-에"
+      - "-에서"
+      - "-의"
+    language_area:
+      - "morphosyntax"
+
+  connective_ending:
+    ko: "연결어미"
+    related_terms:
+      - "어미 오류"
+      - "종결어미"
+      - "전성어미"
+      - "문장 연결"
+      - "복문"
+      - "-고"
+      - "-서"
+      - "-는데"
+      - "-면"
+      - "-기"
+      - "어미 누락"
+      - "어미 대치"
+    language_area:
+      - "morphosyntax"
+
+  phonological_process:
+    ko: "음운변동"
+    related_terms:
+      - "음운 과정"
+      - "대치"
+      - "생략"
+      - "첨가"
+      - "동화"
+      - "경음화"
+      - "축약"
+      - "종성 오류"
+      - "어말 자음 생략"
+      - "파열음화"
+      - "전설음화"
+      - "음소 오류 패턴"
+    language_area:
+      - "phonology"
+
+  disfluency:
+    ko: "비유창성"
+    related_terms:
+      - "반복"
+      - "연장"
+      - "막힘"
+      - "간투사"
+      - "수정"
+      - "머뭇거림"
+      - "삽입"
+      - "미완성 발화"
+      - "말더듬"
+      - "비유창성 빈도"
+      - "P-FA"
+    language_area:
+      - "fluency"
+      - "pragmatics"
+
+  main_concept:
+    ko: "핵심개념분석"
+    related_terms:
+      - "Main Concept Analysis"
+      - "MCA"
+      - "담화 핵심 정보"
+      - "정보 단위"
+      - "핵심 개념 전달"
+      - "AphasiaBank"
+    metrics:
+      - "main_concept_score"
+    language_area:
+      - "narrative_discourse"
+
+  functional_goal:
+    ko: "기능적 목표"
+    related_terms:
+      - "일상 의사소통"
+      - "활동 참여"
+      - "ICF"
+      - "기능적 의사소통"
+      - "보호자 교육"
+      - "가정 연계"
+      - "FCM"
+      - "ASHA-FACS"
+      - "WHO ICF"
+    language_area:
+      - "functional_communication"
+      - "clinical_documentation"
+
+  DLD:
+    ko: "발달성 언어장애"
+    related_terms:
+      - "Developmental Language Disorder"
+      - "언어발달지연"
+      - "후기 말문"
+      - "말 늦은 아동"
+      - "언어 학습 어려움"
+      - "문법 오류"
+      - "가족력"
+      - "지속적 언어 어려움"
+    language_area:
+      - "expressive_language"
+      - "receptive_language"
+      - "morphosyntax"
+
+  milieu_teaching:
+    ko: "환경중심언어중재"
+    related_terms:
+      - "Milieu Teaching"
+      - "우발교수"
+      - "시간지연"
+      - "자연적 강화"
+      - "아동 주도"
+      - "모델링"
+      - "확장"
+      - "보호자 코칭"
+    language_area:
+      - "expressive_language"
+      - "receptive_language"
+      - "pragmatics"
+
+  TBI:
+    ko: "외상성 뇌손상"
+    related_terms:
+      - "Traumatic Brain Injury"
+      - "인지-의사소통"
+      - "집행기능"
+      - "자기인식"
+      - "메타인지"
+      - "미래 기억"
+      - "직장 복귀"
+      - "보상 전략"
+    language_area:
+      - "cognitive_communication"
+      - "pragmatics"
+      - "functional_communication"
+
+  dementia:
+    ko: "치매"
+    related_terms:
+      - "인지 저하"
+      - "경도인지장애"
+      - "MCI"
+      - "알츠하이머병"
+      - "반복 질문"
+      - "기억 보조"
+      - "의사소통 파트너"
+      - "진행성 언어 변화"
+    language_area:
+      - "cognitive_communication"
+      - "receptive_language"
+      - "expressive_language"
+
+  dysarthria:
+    ko: "마비말장애"
+    related_terms:
+      - "말 명료도"
+      - "이해가능성"
+      - "호흡"
+      - "발성"
+      - "조음"
+      - "공명"
+      - "운율"
+      - "이완형"
+      - "경직형"
+      - "실조형"
+      - "저운동형"
+      - "과운동형"
+    metrics:
+      - "speech_intelligibility"
+      - "comprehensible_wpm"
+    language_area:
+      - "motor_speech"
+      - "functional_communication"
+
+  FCM:
+    ko: "기능적 의사소통 척도"
+    related_terms:
+      - "Functional Communication Measure"
+      - "ASHA NOMS"
+      - "기능적 결과"
+      - "활동 참여"
+      - "지원 수준"
+      - "의사소통 독립성"
+    metrics:
+      - "fcm"
+    language_area:
+      - "functional_communication"
+      - "clinical_documentation"
+
+  voice_disorder:
+    ko: "음성장애"
+    related_terms:
+      - "쉰 목소리"
+      - "애성"
+      - "음질"
+      - "음도"
+      - "음성 강도"
+      - "발성 노력"
+      - "후두 검사"
+      - "음성위생"
+      - "공명음성"
+      - "VHI"
+    metrics:
+      - "voice_handicap"
+      - "maximum_phonation_time"
+    language_area:
+      - "voice"
+      - "functional_communication"

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     s3_bucket_audio: str = "utterai-dev-raw-audio"
     s3_bucket_report: str = "utterai-dev-reports"
     s3_bucket_rag: str = "utterai-dev-rag-ingest"
+    s3_bucket_transcript: str = "utterai-dev-transcripts"
 
     # AI DB - pgvector 확장 포함된 PostgreSQL (RAG 벡터 검색용)
     db_user: str = ""
@@ -77,13 +78,10 @@ class Settings(BaseSettings):
     diarization_model_name: str = "pyannote/speaker-diarization-3.1"
     asr_model_name: str = "openai/whisper-large-v3-turbo"
     embedding_model_name: str = "nlpai-lab/KURE-v1"
-    llm_model_name: str = "LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"
 
     # 디바이스 - CPU Worker와 GPU Worker를 분리 배포할 때 각각 다르게 설정
-    model_device: str = "auto"
     asr_device: str = "cuda"
     diarization_device: str = "cuda"
-    llm_device: str = "cuda"
 
     # Whisper chunking - 긴 음성 추론 성능 향상
     asr_chunk_length_s: int = 30    # Whisper 네이티브 컨텍스트 윈도우(30s)에 맞춤

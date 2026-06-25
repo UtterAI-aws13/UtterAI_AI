@@ -2,7 +2,7 @@
 #
 # run_cpu_stage    : VAD + 전처리 → S3 저장 → gpu-inference-queue 발행
 # run_ml_gpu_stage : pyannote + Whisper → S3 저장 → report-analysis-queue 발행 (BE finalize 경유)
-# run_llm_gpu_stage: 정렬 + 지표 + RAG + EXAONE → 최종 S3/RDS 저장
+# run_llm_gpu_stage: 정렬 + 지표 + RAG + Bedrock Claude → 최종 S3/RDS 저장
 #
 # 각 스테이지는 독립적으로 실행되며 S3를 통해 중간 결과를 넘긴다.
 import json
@@ -27,7 +27,6 @@ from app.models.vad_silero import SileroVADWrapper
 from app.models.diarization_pyannote import PyannoteWrapper
 from app.models.asr_whisper import WhisperASRWrapper
 from app.models.embedding_kure import KUREEmbeddingWrapper
-from app.models.llm_exaone import EXAONEWrapper
 from app.rag.retriever import Retriever
 from app.storage import s3_client
 from app.storage.rds import (
@@ -56,7 +55,6 @@ class MLGpuModels:
 @dataclass
 class LLMModels:
     embedding: KUREEmbeddingWrapper
-    llm: EXAONEWrapper
     retriever: Retriever
 
 
@@ -234,7 +232,7 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> 
                     json.dumps([u.model_dump() for u in utterances], ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
-                s3_client.upload(draft_path, settings.s3_bucket_report, draft_key)
+                s3_client.upload(draft_path, settings.s3_bucket_transcript, draft_key)
                 await save_transcript_draft(
                     db, job_id, session_id, message.audio_file_id, draft_key, utterances
                 )
@@ -262,7 +260,7 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> 
 # ---------------------------------------------------------------------------
 
 async def run_llm_gpu_stage(message: "LLMMessage", models: LLMModels) -> None:
-    """지표 + RAG + EXAONE 실행 후 리포트를 S3에 저장한다."""
+    """지표 + RAG + Bedrock Claude 실행 후 리포트를 S3에 저장한다."""
     tracer = trace.get_tracer(__name__)
     job_id = message.job_id
     session_id = message.session_id
@@ -318,7 +316,7 @@ async def run_llm_gpu_stage(message: "LLMMessage", models: LLMModels) -> None:
             logger.info(f"[{job_id}] LLM STAGE: GENERATING REPORT")
             report_start = perf_counter()
             with tracer.start_as_current_span("worker.llm.report"):
-                report = generate_report(job_id, session_id, utterances, metrics, rag_result, models.llm)
+                report = generate_report(job_id, session_id, utterances, metrics, rag_result)
             record_stage_duration("llm-gpu-worker", "report", perf_counter() - report_start)
 
             report_path = str(tmp / "report.json")

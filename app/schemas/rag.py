@@ -1,5 +1,5 @@
 # RAG(Retrieval-Augmented Generation) 관련 스키마
-# 언어발달/치료 문서를 검색해 EXAONE 리포트 생성의 근거로 사용한다
+# 언어발달/치료 문서를 검색해 Bedrock Claude 리포트 생성의 근거로 사용한다
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -8,15 +8,26 @@ class ChunkMetadata(BaseModel):
     """RAG 문서 청크에 부착되는 메타데이터.
 
     age_group, language_area, metric 필드는 검색 시 필터링에 사용된다.
-    예: age_group=preschool, language_area=expressive_language, metric=[MLU, NDW]
+    language_area는 복수 영역을 다루는 문서를 위해 list로 확장됐다.
     """
     document_id: str
     chunk_id: str
     title: str
-    source_type: str        # 예: clinical_guide, therapy_activity, soap_template
+    source_type: str
+    # source_type 허용값:
+    #   clinical_guide       임상 해석 가이드
+    #   research_paper       논문 전문
+    #   research_abstract    논문 초록 (전문 미확보)
+    #   scoring_rule         지표 계산 규칙·제외 기준
+    #   linguistic_rule      한국어 언어현상 규칙
+    #   safety_rule          단정·진단 표현 제한
     age_group: str | None = None
-    language_area: str | None = None
+    language_area: list[str] = []
     metric: list[str] = []
+    clinical_task: list[str] = []
+    # clinical_task 허용값: assessment, report_generation, goal_writing, intervention
+    assessment_tool: list[str] = []
+    # 예: U-TAP2, PRES, PK-WAB, K-ALAS
     page: int | None = None
     section: str | None = None
     created_at: datetime | None = None

@@ -28,11 +28,253 @@ from app.config import settings
 ROOT = Path(__file__).parent.parent
 
 SCAN_TARGETS = [
-    (ROOT / "docs" / "rag",    "clinical_guide",  ("*.txt",)),
-    (ROOT / "docs" / "papers", "research_paper",  ("*.pdf",)),
+    (ROOT / "docs" / "rag",    "clinical_guide",    ("*.txt",)),
+    (ROOT / "docs" / "papers", "research_paper",    ("*.pdf",)),
+    (ROOT / "docs" / "papers", "research_abstract", ("*.txt",)),
 ]
 
 S3_PREFIX = "documents"
+
+# 문서별 메타데이터 오버라이드.
+# scan_docs()에서 파일명으로 파싱한 document_id를 키로 조회해 ChunkMetadata를 보강한다.
+# language_area가 없으면 retrieve 시 필터가 작동하지 않아 검색 정밀도가 떨어진다.
+DOC_METADATA: dict[str, dict] = {
+    # ── 임상 가이드 (docs/rag/*.txt) ─────────────────────────────────────────
+    "doc_language_sample_metrics": {
+        "age_group": "preschool",
+        "language_area": ["expressive_language", "vocabulary", "pragmatics", "phonology"],
+        "metric": ["mlu_morpheme", "llu_morpheme", "ndw", "ntw", "ttr", "pcc"],
+        "clinical_task": ["assessment", "report_generation"],
+        "assessment_tool": ["K-ALAS"],
+    },
+    "doc_korean_morphosyntax": {
+        "age_group": "preschool",
+        "language_area": ["morphosyntax"],
+        "metric": [],
+        "clinical_task": ["assessment", "goal_writing"],
+        "assessment_tool": [],
+    },
+    "doc_adult_slp_guide": {
+        "age_group": "adult",
+        "language_area": ["expressive_language", "narrative_discourse", "motor_speech", "cognitive_communication", "clinical_documentation"],
+        "metric": ["ciu_count", "ciu_ratio", "ciu_per_minute"],
+        "clinical_task": ["assessment", "report_generation", "goal_writing"],
+        "assessment_tool": ["PK-WAB", "K-BNT"],
+    },
+    "doc_child_slp_population": {
+        "age_group": "preschool",
+        "language_area": ["pragmatics", "expressive_language", "phonology", "narrative_discourse"],
+        "metric": ["mlu_morpheme", "ndw", "ttr", "pcc"],
+        "clinical_task": ["assessment", "intervention"],
+        "assessment_tool": ["PRES", "SELSI", "U-TAP2", "APAC"],
+    },
+    "doc_child_assessment_tools": {
+        "age_group": "preschool",
+        "language_area": ["expressive_language", "receptive_language", "phonology"],
+        "metric": ["mlu_morpheme", "ndw", "pcc"],
+        "clinical_task": ["assessment"],
+        "assessment_tool": ["PRES", "SELSI", "REVT", "U-TAP2", "APAC", "K-ALAS", "LSSC", "KOPLAC"],
+    },
+    # ── P0 scoring_rule 문서 (docs/rag/*.txt) ────────────────────────────────
+    "doc_metric_exception_rule": {
+        "source_type": "scoring_rule",
+        "age_group": "all",
+        "language_area": ["expressive_language", "vocabulary", "phonology", "narrative_discourse", "fluency"],
+        "metric": ["mlu_morpheme", "ttr", "ndw", "pcc", "ciu_count"],
+        "clinical_task": ["assessment"],
+        "assessment_tool": ["K-ALAS"],
+    },
+    "doc_metric_mlu_korean_rule": {
+        "source_type": "scoring_rule",
+        "age_group": "preschool",
+        "language_area": ["expressive_language", "morphosyntax"],
+        "metric": ["mlu_morpheme", "llu_morpheme"],
+        "clinical_task": ["assessment", "report_generation"],
+        "assessment_tool": ["K-ALAS"],
+    },
+    "doc_metric_pcc_korean_rule": {
+        "source_type": "scoring_rule",
+        "age_group": "preschool",
+        "language_area": ["phonology"],
+        "metric": ["pcc"],
+        "clinical_task": ["assessment", "report_generation"],
+        "assessment_tool": ["U-TAP2", "APAC"],
+    },
+    "doc_metric_ciu_korean_rule": {
+        "source_type": "scoring_rule",
+        "age_group": "adult",
+        "language_area": ["narrative_discourse", "functional_communication"],
+        "metric": ["ciu_count", "ciu_ratio", "ciu_per_minute"],
+        "clinical_task": ["assessment", "report_generation"],
+        "assessment_tool": [],
+    },
+    # ── P0 safety_rule 문서 (docs/rag/*.txt) ─────────────────────────────────
+    "doc_report_safety_rule": {
+        "source_type": "safety_rule",
+        "age_group": "all",
+        "language_area": ["clinical_documentation"],
+        "metric": [],
+        "clinical_task": ["report_generation"],
+        "assessment_tool": [],
+    },
+    # ── P1 임상 가이드 보완 (docs/rag/*.txt) ─────────────────────────────────
+    "doc_fluency_guide": {
+        "age_group": "all",
+        "language_area": ["fluency", "pragmatics"],
+        "metric": ["percent_ss", "sld_ratio"],
+        "clinical_task": ["assessment", "report_generation", "goal_writing", "intervention"],
+        "assessment_tool": ["P-FA-II", "OASES"],
+    },
+    "doc_school_age_guide": {
+        "age_group": "school_age",
+        "language_area": ["expressive_language", "receptive_language", "narrative_discourse", "phonology"],
+        "metric": ["mlu_morpheme", "ndw"],
+        "clinical_task": ["assessment", "report_generation", "goal_writing", "intervention"],
+        "assessment_tool": ["LSSC", "KOLRA", "KOPLAC"],
+    },
+    "doc_receptive_language_guide": {
+        "age_group": "preschool",
+        "language_area": ["receptive_language"],
+        "metric": [],
+        "clinical_task": ["assessment", "report_generation", "goal_writing", "intervention"],
+        "assessment_tool": ["PRES", "REVT", "SELSI"],
+    },
+    "doc_goal_writing_guide": {
+        "age_group": "all",
+        "language_area": ["clinical_documentation", "functional_communication"],
+        "metric": [],
+        "clinical_task": ["goal_writing", "report_generation"],
+        "assessment_tool": [],
+    },
+    # ── P2/P3 임상 가이드 보완 (docs/rag/*.txt) ─────────────────────────────
+    "doc_asd_pragmatics": {
+        "age_group": "preschool",
+        "language_area": ["pragmatics", "receptive_language", "expressive_language", "aac"],
+        "metric": [],
+        "clinical_task": ["assessment", "intervention", "goal_writing", "report_generation"],
+        "assessment_tool": [],
+    },
+    "doc_dld_vs_delay": {
+        "age_group": "preschool",
+        "language_area": ["expressive_language", "receptive_language", "morphosyntax"],
+        "metric": ["mlu_morpheme", "ndw", "ttr"],
+        "clinical_task": ["assessment", "intervention", "report_generation"],
+        "assessment_tool": ["PRES", "SELSI", "REVT"],
+    },
+    "doc_milieu_teaching": {
+        "age_group": "preschool",
+        "language_area": ["expressive_language", "receptive_language", "pragmatics"],
+        "metric": [],
+        "clinical_task": ["intervention", "goal_writing"],
+        "assessment_tool": [],
+    },
+    "doc_narrative_intervention": {
+        "age_group": "school_age",
+        "language_area": ["narrative_discourse", "expressive_language", "receptive_language"],
+        "metric": ["ndw", "ttr"],
+        "clinical_task": ["assessment", "intervention", "goal_writing", "report_generation"],
+        "assessment_tool": ["LSSC", "KOLRA", "KOPLAC"],
+    },
+    "doc_adult_discourse": {
+        "age_group": "adult",
+        "language_area": ["narrative_discourse", "functional_communication", "expressive_language"],
+        "metric": ["ciu_count", "ciu_ratio", "ciu_per_minute", "main_concept_score", "wpm"],
+        "clinical_task": ["assessment", "intervention", "goal_writing", "report_generation"],
+        "assessment_tool": ["PK-WAB", "K-BNT"],
+    },
+    "doc_tbi_cognitive_comm": {
+        "age_group": "adult",
+        "language_area": ["cognitive_communication", "pragmatics", "functional_communication"],
+        "metric": [],
+        "clinical_task": ["assessment", "intervention", "goal_writing", "report_generation"],
+        "assessment_tool": [],
+    },
+    "doc_dementia_language": {
+        "age_group": "adult",
+        "language_area": ["cognitive_communication", "receptive_language", "expressive_language", "aac"],
+        "metric": [],
+        "clinical_task": ["assessment", "intervention", "goal_writing", "report_generation"],
+        "assessment_tool": [],
+    },
+    "doc_dysarthria_types": {
+        "age_group": "adult",
+        "language_area": ["motor_speech", "functional_communication", "aac"],
+        "metric": ["speech_intelligibility", "comprehensible_wpm"],
+        "clinical_task": ["assessment", "intervention", "goal_writing", "report_generation"],
+        "assessment_tool": [],
+    },
+    "doc_fcm_guide": {
+        "age_group": "adult",
+        "language_area": ["functional_communication", "clinical_documentation"],
+        "metric": ["fcm"],
+        "clinical_task": ["assessment", "goal_writing", "report_generation"],
+        "assessment_tool": ["ASHA NOMS"],
+    },
+    "doc_aac_child": {
+        "age_group": "preschool",
+        "language_area": ["aac", "expressive_language", "receptive_language", "pragmatics"],
+        "metric": [],
+        "clinical_task": ["assessment", "intervention", "goal_writing"],
+        "assessment_tool": [],
+    },
+    "doc_aac_adult": {
+        "age_group": "adult",
+        "language_area": ["aac", "functional_communication", "motor_speech", "expressive_language"],
+        "metric": [],
+        "clinical_task": ["assessment", "intervention", "goal_writing"],
+        "assessment_tool": [],
+    },
+    "doc_voice_disorders": {
+        "age_group": "adult",
+        "language_area": ["voice", "functional_communication"],
+        "metric": ["voice_handicap", "maximum_phonation_time"],
+        "clinical_task": ["assessment", "intervention", "goal_writing", "report_generation"],
+        "assessment_tool": ["VHI"],
+    },
+    # ── 연구 논문 (docs/papers/*.pdf / *.txt) ────────────────────────────────
+    "doc_asd_slp_subjectivity": {
+        "age_group": "preschool",
+        "language_area": ["pragmatics"],
+        "metric": [],
+        "clinical_task": ["assessment"],
+        "assessment_tool": [],
+    },
+    "doc_utterance_analysis": {
+        "age_group": "preschool",
+        "language_area": ["expressive_language"],
+        "metric": ["mlu_morpheme"],
+        "clinical_task": ["assessment"],
+        "assessment_tool": [],
+    },
+    "doc_language_sample_analysis": {
+        "age_group": "preschool",
+        "language_area": ["expressive_language"],
+        "metric": ["mlu_morpheme", "ndw", "ttr"],
+        "clinical_task": ["assessment"],
+        "assessment_tool": ["K-ALAS"],
+    },
+}
+
+
+def _load_paper_metadata() -> None:
+    """docs/papers/paper_metadata.json에서 논문 메타데이터를 읽어 DOC_METADATA에 병합한다."""
+    paper_metadata_file = ROOT / "docs" / "papers" / "paper_metadata.json"
+    if not paper_metadata_file.exists():
+        return
+    data: dict = json.loads(paper_metadata_file.read_text())
+    for doc_id, meta in data.items():
+        if doc_id not in DOC_METADATA:
+            DOC_METADATA[doc_id] = {
+                "source_type": meta.get("source_type", "research_abstract"),
+                "age_group": meta.get("age_group", "all"),
+                "language_area": meta.get("language_area", []),
+                "metric": meta.get("metric", []),
+                "clinical_task": meta.get("clinical_task", []),
+                "assessment_tool": meta.get("assessment_tool", []),
+            }
+
+
+_load_paper_metadata()
 
 
 def _parse_filename(stem: str) -> tuple[str, str]:
@@ -51,13 +293,17 @@ def scan_docs():
         for pattern in patterns:
             for path in sorted(directory.glob(pattern)):
                 doc_id, title = _parse_filename(path.stem)
+                overrides = DOC_METADATA.get(doc_id, {})
                 docs.append((path, source_type, ChunkMetadata(
                     document_id=doc_id,
                     chunk_id="",
                     title=title,
-                    source_type=source_type,
-                    age_group="all",
-                    metric=[],
+                    source_type=overrides.get("source_type", source_type),
+                    age_group=overrides.get("age_group", "all"),
+                    language_area=overrides.get("language_area", []),
+                    metric=overrides.get("metric", []),
+                    clinical_task=overrides.get("clinical_task", []),
+                    assessment_tool=overrides.get("assessment_tool", []),
                 )))
     return docs
 
@@ -151,7 +397,10 @@ def ingest_remote(docs, force: bool = False):
                 "title": metadata.title,
                 "source_type": metadata.source_type,
                 "age_group": metadata.age_group or "all",
+                "language_area": metadata.language_area,
                 "metric": metadata.metric or [],
+                "clinical_task": metadata.clinical_task or [],
+                "assessment_tool": metadata.assessment_tool or [],
             },
         }
         sqs.send_message(QueueUrl=queue_url, MessageBody=json.dumps(message, ensure_ascii=False))

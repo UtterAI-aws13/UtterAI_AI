@@ -29,7 +29,7 @@ app/
 │   ├── vector_store.py         # pgvector ORM + upsert / search
 │   ├── rag_graph.py            # LangGraph 기반 쿼리 파이프라인
 │   ├── retriever.py            # rag_graph 래퍼 (외부 호출용)
-│   └── prompt_templates.py     # EXAONE 입력 프롬프트 빌더
+│   └── prompt_templates.py     # Bedrock Claude 입력 프롬프트 빌더
 ```
 
 ---
