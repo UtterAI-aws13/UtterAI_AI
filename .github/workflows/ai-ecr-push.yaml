@@ -220,6 +220,14 @@ jobs:
         run: |
           IMAGE_URI="${ECR_REGISTRY}/${ECR_CPU_REPOSITORY}:${IMAGE_TAG}"
 
+          if aws ecr describe-images \
+              --repository-name "$ECR_CPU_REPOSITORY" \
+              --image-ids imageTag="$IMAGE_TAG" \
+              --region "$AWS_REGION" > /dev/null 2>&1; then
+            echo "Image $IMAGE_TAG already exists in ECR, skipping build and push."
+            exit 0
+          fi
+
           echo "Build CPU image: $IMAGE_URI"
           docker build -f Dockerfile.cpu -t "$IMAGE_URI" .
 
@@ -295,6 +303,14 @@ jobs:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
         run: |
           IMAGE_URI="${ECR_REGISTRY}/${ECR_GPU_REPOSITORY}:${IMAGE_TAG}"
+
+          if aws ecr describe-images \
+              --repository-name "$ECR_GPU_REPOSITORY" \
+              --image-ids imageTag="$IMAGE_TAG" \
+              --region "$AWS_REGION" > /dev/null 2>&1; then
+            echo "Image $IMAGE_TAG already exists in ECR, skipping build and push."
+            exit 0
+          fi
 
           echo "Build GPU image: $IMAGE_URI"
           docker build -f Dockerfile.gpu -t "$IMAGE_URI" .
