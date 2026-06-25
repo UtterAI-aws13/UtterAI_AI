@@ -130,7 +130,10 @@ async def run_cpu_stage(message: JobMessage, models: CPUModels) -> None:
             vad_s3_key=vad_key,
             options=message.options,
         )
-        with tracer.start_as_current_span("worker.cpu.publish_ml_gpu") as child_span:
+        with tracer.start_as_current_span(
+            "worker.cpu.publish_ml_gpu",
+            kind=trace.SpanKind.PRODUCER,
+        ) as child_span:
             child_span.set_attribute("queue.name", settings.sqs_gpu_inference_queue_url)
             _send_sqs(
                 settings.sqs_gpu_inference_queue_url,
