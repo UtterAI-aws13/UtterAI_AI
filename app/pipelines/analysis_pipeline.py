@@ -248,6 +248,7 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> 
 
         except Exception as exc:
             logger.error(f"[{job_id}] ML GPU STAGE 실패: {exc}")
+            await db.rollback()
             await update_session_status(db, session_id, "FAILED")
             await update_analysis_job_status(
                 db, job_id, "FAILED",
@@ -335,10 +336,10 @@ async def run_llm_gpu_stage(message: "LLMMessage", models: LLMModels) -> None:
 
 def _build_rag_query(metrics) -> str:
     if not metrics:
-        return "언어 발달 지연 아동의 표현언어 중재 방법은?"
+        return "언어 발달 지연 환자의 표현언어 중재 방법은?"
     child = next((m for m in metrics if m.speaker_role == "PATIENT"), metrics[0])
     m = child.metrics
     return (
-        f"MLU {m.mlu_morpheme:.1f}, TTR {m.ttr:.3f}, NDW {m.ndw} 수준 아동의 "
+        f"MLU {m.mlu_morpheme:.1f}, TTR {m.ttr:.3f}, NDW {m.ndw} 수준 환자의 "
         "언어 발달 평가와 적합한 중재 방법은?"
     )
