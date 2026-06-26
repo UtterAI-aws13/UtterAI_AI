@@ -97,12 +97,16 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
         if not messages:
             continue
 
-        raw = messages[0]
-        receipt_handle = raw["ReceiptHandle"]
-        body = json.loads(raw["Body"])
-        job_id = body.get("job_id", "unknown")
-        logger.info(f"[report-loop] 메시지 수신 job_id={job_id} transcript_id={body.get('transcript_id')}")
-        message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
+        try:
+            raw = messages[0]
+            receipt_handle = raw["ReceiptHandle"]
+            body = json.loads(raw["Body"])
+            job_id = body.get("job_id", "unknown")
+            logger.info(f"[report-loop] 메시지 수신 job_id={job_id} transcript_id={body.get('transcript_id')}")
+            message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
+        except Exception as e:
+            logger.exception(f"[report-loop] 메시지 파싱 실패: {e}")
+            continue
 
         try:
             tracer = trace.get_tracer(__name__)
