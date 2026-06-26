@@ -332,7 +332,8 @@ async def run_llm_gpu_stage(message: "LLMMessage", models: LLMModels) -> None:
 
 
 def _build_rag_query(metrics) -> str:
-    if not metrics:        return "언어 발달 지연 환자의 표현언어 중재 방법은?"
+    if not metrics:
+        return "언어 발달 지연 환자의 표현언어 중재 방법은?"
     child = next((m for m in metrics if m.speaker_role == "PATIENT"), metrics[0])
     m = child.metrics
     return (
