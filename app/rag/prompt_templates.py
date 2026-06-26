@@ -6,7 +6,7 @@ from app.schemas import Utterance, SpeakerMetrics, RagResult
 REPORT_SYSTEM_PROMPT = """당신은 언어치료 세션 분석을 보조하는 AI입니다.
 아래 규칙을 반드시 따르세요:
 - 검색된 근거 문서에 없는 내용은 단정하지 마세요.
-- 아동을 진단하지 마세요.
+- 환자를 진단하지 마세요.
 - 출력은 반드시 JSON 형식을 따르세요.
 - 치료사가 검토할 초안임을 명시하세요."""
 
@@ -47,12 +47,12 @@ def build_bedrock_report_prompt(
         f"- TTR: {metrics.get('ttr', 'N/A')}\n"
         f"- 평균 반응 지연: {metrics.get('avg_response_latency_sec', 'N/A')}초\n"
         f"- 최대 반응 지연: {metrics.get('max_response_latency_sec', 'N/A')}초\n"
-        f"- 총 발화 수 (아동): {metrics.get('total_utterances', 'N/A')}"
+        f"- 총 발화 수 (환자): {metrics.get('total_utterances', 'N/A')}"
     )
 
     utterance_text = "\n".join(
         f"{u.get('speaker_role', 'UNKNOWN')}: {u.get('text', '')}"
-        for u in utterances[:10]
+        for u in utterances
     )
 
     evidence_text = "\n".join(
@@ -61,7 +61,7 @@ def build_bedrock_report_prompt(
     ) if evidence else "(검색된 근거 없음)"
 
     session_info = (
-        f"- 아동 연령: {age_str}\n"
+        f"- 환자 연령: {age_str}\n"
         f"- 세션 번호: {session.get('session_number', 'N/A')}회\n"
         f"- 세션 날짜: {session.get('session_date', 'N/A')}"
     )
@@ -71,10 +71,10 @@ def build_bedrock_report_prompt(
 ## 세션 정보
 {session_info}
 
-## 언어 지표 (아동)
+## 언어 지표 (환자)
 {metrics_text}
 
-## 대표 발화 (최대 10개)
+## 전체 발화
 {utterance_text}
 
 ## 검색 근거
@@ -109,12 +109,12 @@ def build_template_report_prompt(
         f"- TTR: {metrics.get('ttr', 'N/A')}\n"
         f"- 평균 반응 지연: {metrics.get('avg_response_latency_sec', 'N/A')}초\n"
         f"- 최대 반응 지연: {metrics.get('max_response_latency_sec', 'N/A')}초\n"
-        f"- 총 발화 수 (아동): {metrics.get('total_utterances', 'N/A')}"
+        f"- 총 발화 수 (환자): {metrics.get('total_utterances', 'N/A')}"
     )
 
     utterance_text = "\n".join(
         f"{u.get('speaker_role', 'UNKNOWN')}: {u.get('text', '')}"
-        for u in utterances[:10]
+        for u in utterances
     )
 
     evidence_text = "\n".join(
@@ -123,7 +123,7 @@ def build_template_report_prompt(
     ) if evidence else "(검색된 근거 없음)"
 
     session_info = (
-        f"- 아동 연령: {age_str}\n"
+        f"- 환자 연령: {age_str}\n"
         f"- 세션 번호: {session.get('session_number', 'N/A')}회\n"
         f"- 세션 날짜: {session.get('session_date', 'N/A')}"
     )
@@ -147,10 +147,10 @@ def build_template_report_prompt(
 ## 세션 정보
 {session_info}
 
-## 언어 지표 (아동)
+## 언어 지표 (환자)
 {metrics_text}
 
-## 대표 발화 (최대 10개)
+## 전체 발화
 {utterance_text}
 
 ## 검색 근거
@@ -170,13 +170,7 @@ def build_report_prompt(
     metrics: list[SpeakerMetrics],
     rag_result: RagResult,
 ) -> str:
-    """Bedrock Claude 입력 프롬프트를 생성한다.
-
-    LLM에는 원본 음성이나 전체 전사문 대신 다음 정보만 전달한다:
-    - 화자별 언어 지표 수치
-    - 대표 발화 최대 10개 (전체 전사문 노출 방지)
-    - RAG 검색 근거 chunk (앞 200자만 사용해 컨텍스트 길이 제어)
-    """
+    """Bedrock Claude 입력 프롬프트를 생성한다."""
     metrics_text = "\n".join(
         f"- {m.speaker_role} ({m.speaker_id}): MLU={m.metrics.mlu_morpheme}, "
         f"NTW={m.metrics.ntw}, NDW={m.metrics.ndw}, TTR={m.metrics.ttr}"
@@ -188,9 +182,8 @@ def build_report_prompt(
         for e in rag_result.evidence
     )
 
-    # 전체 발화 대신 앞 10개만 전달해 프롬프트 길이를 제한한다
     utterance_text = "\n".join(
-        f"{u.speaker_role}: {u.text}" for u in utterances[:10]
+        f"{u.speaker_role}: {u.text}" for u in utterances
     )
 
     return f"""{REPORT_SYSTEM_PROMPT}
@@ -198,7 +191,7 @@ def build_report_prompt(
 ## 언어 지표
 {metrics_text}
 
-## 대표 발화 (최대 10개)
+## 전체 발화
 {utterance_text}
 
 ## 검색 근거
