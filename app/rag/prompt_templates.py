@@ -47,7 +47,7 @@ def build_bedrock_report_prompt(
         f"- TTR: {metrics.get('ttr', 'N/A')}\n"
         f"- 평균 반응 지연: {metrics.get('avg_response_latency_sec', 'N/A')}초\n"
         f"- 최대 반응 지연: {metrics.get('max_response_latency_sec', 'N/A')}초\n"
-        f"- 총 발화 수 (아동): {metrics.get('total_utterances', 'N/A')}"
+        f"- 총 발화 수: {metrics.get('total_utterances', 'N/A')}"
     )
 
     utterance_text = "\n".join(
@@ -61,7 +61,7 @@ def build_bedrock_report_prompt(
     ) if evidence else "(검색된 근거 없음)"
 
     session_info = (
-        f"- 아동 연령: {age_str}\n"
+        f"- 환자 연령: {age_str}\n"
         f"- 세션 번호: {session.get('session_number', 'N/A')}회\n"
         f"- 세션 날짜: {session.get('session_date', 'N/A')}"
     )
