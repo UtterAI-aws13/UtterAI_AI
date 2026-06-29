@@ -1,9 +1,10 @@
-"""WhisperASRWrapper._postprocess_chunks 단위 테스트.
+"""WhisperASRWrapper._postprocess_chunks 및 _group_vad_segments 단위 테스트.
 
 GPU/모델 없이 후처리 로직만 검증한다.
 """
 import pytest
-from app.models.asr_whisper import WhisperASRWrapper
+from app.models.asr_whisper import WhisperASRWrapper, _group_vad_segments
+from app.schemas import SpeechSegment
 
 
 @pytest.fixture
@@ -124,6 +125,70 @@ class TestRounding:
         segs = _seg(asr, chunks, 10.0)
         assert segs[0].start_time == pytest.approx(0.123, abs=1e-9)
         assert segs[0].end_time == pytest.approx(5.988, abs=1e-9)
+
+
+def _vad(seg_id, start, end):
+    return SpeechSegment(
+        segment_id=seg_id,
+        start_time=start,
+        end_time=end,
+        duration_sec=round(end - start, 3),
+        confidence=0.9,
+    )
+
+
+class TestVadGrouping:
+    """_group_vad_segments 단위 테스트."""
+
+    def test_single_segment_returns_one_group(self):
+        segs = [_vad("v0", 1.0, 5.0)]
+        groups = _group_vad_segments(segs)
+        assert groups == [(1.0, 5.0)]
+
+    def test_close_segments_merged_into_one_group(self):
+        # gap=0.5s < max_gap=2s → 하나로 묶임
+        segs = [_vad("v0", 0.0, 5.0), _vad("v1", 5.5, 10.0)]
+        groups = _group_vad_segments(segs)
+        assert len(groups) == 1
+        assert groups[0] == (0.0, 10.0)
+
+    def test_large_gap_splits_into_two_groups(self):
+        # gap=3s > max_gap=2s → 두 그룹
+        segs = [_vad("v0", 0.0, 5.0), _vad("v1", 8.0, 13.0)]
+        groups = _group_vad_segments(segs)
+        assert len(groups) == 2
+
+    def test_max_duration_exceeded_splits_group(self):
+        # 첫 두 세그먼트 합산이 max_duration=25s 초과 → 분할
+        segs = [
+            _vad("v0", 0.0, 15.0),
+            _vad("v1", 15.5, 26.0),  # extended=26s > 25s
+            _vad("v2", 26.5, 30.0),
+        ]
+        groups = _group_vad_segments(segs)
+        assert len(groups) >= 2
+        for g_start, g_end in groups:
+            assert g_end - g_start <= 26.0  # 단일 세그먼트는 예외 허용
+
+    def test_empty_segments_returns_empty(self):
+        assert _group_vad_segments([]) == []
+
+    def test_60s_audio_produces_multiple_groups(self):
+        # 60초 오디오, 자연스러운 발화 패턴
+        segs = [
+            _vad("v0", 0.5, 8.0),
+            _vad("v1", 8.5, 15.0),
+            _vad("v2", 15.5, 22.0),
+            _vad("v3", 25.0, 35.0),  # 3s gap → 새 그룹
+            _vad("v4", 36.0, 45.0),
+            _vad("v5", 50.0, 58.0),  # 5s gap → 새 그룹
+        ]
+        groups = _group_vad_segments(segs)
+        # 전체 발화 구간이 모두 포함되어야 한다
+        all_covered_start = min(g[0] for g in groups)
+        all_covered_end = max(g[1] for g in groups)
+        assert all_covered_start <= 0.5
+        assert all_covered_end >= 58.0
 
 
 class TestSixtySecondCoverage:

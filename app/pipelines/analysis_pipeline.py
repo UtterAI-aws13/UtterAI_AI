@@ -169,6 +169,16 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> 
                     s3_client.download(settings.s3_bucket_audio, message.wav_s3_key, wav_path)
                 record_stage_duration("ml-gpu-worker", "download", perf_counter() - download_start)
 
+                # VAD 결과를 ASR 전에 로드한다.
+                # ASR이 VAD 발화 구간을 청크 기준으로 사용하므로 순서가 중요하다.
+                logger.info(f"[{job_id}] ML GPU STAGE: LOADING VAD")
+                vad_path = str(tmp / "vad_segments.json")
+                s3_client.download(settings.s3_bucket_audio, message.vad_s3_key, vad_path)
+                speech_segments = [
+                    SpeechSegment(**s) for s in json.loads(Path(vad_path).read_text())
+                ]
+                logger.info(f"[{job_id}] speech_segments={len(speech_segments)}")
+
                 if message.options.enable_diarization:
                     logger.info(f"[{job_id}] ML GPU STAGE: DIARIZATION")
                     diarize_start = perf_counter()
@@ -182,7 +192,7 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> 
                 logger.info(f"[{job_id}] ML GPU STAGE: ASR")
                 asr_start = perf_counter()
                 with tracer.start_as_current_span("worker.ml_gpu.asr"):
-                    asr_result = models.asr.predict(wav_path)
+                    asr_result = models.asr.predict_with_vad(wav_path, speech_segments)
                 record_stage_duration("ml-gpu-worker", "asr", perf_counter() - asr_start)
                 logger.info(f"[{job_id}] asr_segments={len(asr_result.segments)}")
 
@@ -201,13 +211,6 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> 
                     Path(asr_path).write_text(asr_result.model_dump_json(), encoding="utf-8")
                     s3_client.upload(asr_path, settings.s3_bucket_audio, asr_key)
                 record_stage_duration("ml-gpu-worker", "persist", perf_counter() - persist_start)
-
-                # VAD 결과 로드 (CPU stage에서 저장)
-                vad_path = str(tmp / "vad_segments.json")
-                s3_client.download(settings.s3_bucket_audio, message.vad_s3_key, vad_path)
-                speech_segments = [
-                    SpeechSegment(**s) for s in json.loads(Path(vad_path).read_text())
-                ]
 
                 # alignment
                 logger.info(f"[{job_id}] ML GPU STAGE: ALIGNING")
