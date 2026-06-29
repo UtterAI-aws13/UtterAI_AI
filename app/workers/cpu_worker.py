@@ -64,9 +64,15 @@ def _run_preprocess_loop(sqs, models: CPUModels) -> None:
 
         try:
             tracer = trace.get_tracer(__name__)
-            with tracer.start_as_current_span("worker.cpu.message", context=message_context):
+            with tracer.start_as_current_span(
+                "worker.cpu.message",
+                context=message_context,
+                kind=trace.SpanKind.CONSUMER,
+            ) as span:
                 record_sqs_receive("cpu-worker")
                 job = JobMessage(**body)
+                span.set_attribute("session_id", job.session_id)
+                span.set_attribute("user_id", job.user_id)
                 asyncio.run(run_cpu_stage(job, models))
                 sqs.delete_message(
                     QueueUrl=settings.sqs_audio_preprocess_queue_url,
@@ -97,18 +103,28 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
         if not messages:
             continue
 
-        raw = messages[0]
-        receipt_handle = raw["ReceiptHandle"]
-        body = json.loads(raw["Body"])
-        job_id = body.get("job_id", "unknown")
-        logger.info(f"[report-loop] 메시지 수신 job_id={job_id} transcript_id={body.get('transcript_id')}")
-        message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
+        try:
+            raw = messages[0]
+            receipt_handle = raw["ReceiptHandle"]
+            body = json.loads(raw["Body"])
+            job_id = body.get("job_id", "unknown")
+            logger.info(f"[report-loop] 메시지 수신 job_id={job_id} transcript_id={body.get('transcript_id')}")
+            message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
+        except Exception as e:
+            logger.exception(f"[report-loop] 메시지 파싱 실패: {e}")
+            continue
 
         try:
             tracer = trace.get_tracer(__name__)
-            with tracer.start_as_current_span("worker.report.message", context=message_context):
+            with tracer.start_as_current_span(
+                "worker.report.message",
+                context=message_context,
+                kind=trace.SpanKind.CONSUMER,
+            ) as span:
                 record_sqs_receive("cpu-worker-report")
                 msg = ReportJobMessage(**body)
+                span.set_attribute("session_id", msg.session_id)
+                span.set_attribute("job_id", msg.job_id)
 
                 logger.info(f"[report-loop] BE DB 세션 열기 job_id={job_id}")
 

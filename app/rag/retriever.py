@@ -61,7 +61,7 @@ async def retrieve_evidence(
     latency = metrics.get("avg_response_latency_sec", 0)
 
     question = (
-        f"만 {age_months // 12}세 아동 언어치료 세션. "
+        f"만 {age_months // 12}세 환자 언어치료 세션. "
         f"MLU {mlu:.1f}, NDW {ndw}, TTR {ttr:.3f}, "
         f"평균 반응 지연 {latency:.2f}초. "
         f"이 지표를 SOAP Note에 어떻게 해석하고 기록해야 하는가?"

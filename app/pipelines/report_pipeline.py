@@ -143,9 +143,10 @@ async def run_bedrock_report_stage(
     job_id = message.job_id
     session_id = message.session_id
     transcript_id = message.transcript_id
+    report_saved = False
 
     try:
-        logger.info(f"[{job_id}] REPORT STAGE: LOADING TRANSCRIPT transcript_id={transcript_id}")
+        logger.info(f"[{job_id}] REPORT STAGE: LOADING TRANSCRIPT transcript_id={transcript_id} final_s3_key={message.final_s3_key!r}")
         if message.final_s3_key:
             from app.storage.s3_client import get_bytes
             raw = get_bytes(settings.s3_bucket_transcript, message.final_s3_key)
@@ -159,7 +160,7 @@ async def run_bedrock_report_stage(
 
         logger.info(f"[{job_id}] REPORT STAGE: COMPUTING METRICS ({len(segments)} segments)")
         metrics = _compute_metrics_from_segments(segments)
-        logger.debug(f"[{job_id}] REPORT STAGE: metrics={metrics}")
+        logger.info(f"[{job_id}] REPORT STAGE: metrics={metrics}")
 
         logger.info(f"[{job_id}] REPORT STAGE: LOADING SESSION CONTEXT")
         session_ctx = await get_session_context(db, session_id)
@@ -242,7 +243,6 @@ async def run_bedrock_report_stage(
             soap_note = report_data.get("soap_note", {})
 
         logger.info(f"[{job_id}] REPORT STAGE: SAVING")
-        report_saved = False
         await save_report(
             db=db,
             job_id=job_id,
@@ -286,13 +286,6 @@ async def run_bedrock_report_stage(
 # ---------------------------------------------------------------------------
 
 async def run_report_pipeline(job_id: str) -> dict:
-    """Bedrock Claude 기반 리포트 생성 파이프라인 (Mock 데이터 사용).
-
-    음성 파이프라인 완성 후 아래 세 줄을 RDS 조회로 교체한다:
-        metrics    = await repositories.get_language_metrics(job_id)
-        utterances = await repositories.get_child_utterances(job_id)
-        session    = await repositories.get_session_by_job(job_id)
-    """
     from datetime import datetime, timezone
 
     from app.mocks.mock_metrics import MOCK_METRICS

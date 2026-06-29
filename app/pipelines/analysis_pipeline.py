@@ -130,7 +130,10 @@ async def run_cpu_stage(message: JobMessage, models: CPUModels) -> None:
             vad_s3_key=vad_key,
             options=message.options,
         )
-        with tracer.start_as_current_span("worker.cpu.publish_ml_gpu") as child_span:
+        with tracer.start_as_current_span(
+            "worker.cpu.publish_ml_gpu",
+            kind=trace.SpanKind.PRODUCER,
+        ) as child_span:
             child_span.set_attribute("queue.name", settings.sqs_gpu_inference_queue_url)
             _send_sqs(
                 settings.sqs_gpu_inference_queue_url,
@@ -248,6 +251,7 @@ async def run_ml_gpu_stage(message: "MLGpuMessage", models: MLGpuModels, db) -> 
 
         except Exception as exc:
             logger.error(f"[{job_id}] ML GPU STAGE 실패: {exc}")
+            await db.rollback()
             await update_session_status(db, session_id, "FAILED")
             await update_analysis_job_status(
                 db, job_id, "FAILED",
@@ -335,10 +339,10 @@ async def run_llm_gpu_stage(message: "LLMMessage", models: LLMModels) -> None:
 
 def _build_rag_query(metrics) -> str:
     if not metrics:
-        return "언어 발달 지연 아동의 표현언어 중재 방법은?"
+        return "언어 발달 지연 환자의 표현언어 중재 방법은?"
     child = next((m for m in metrics if m.speaker_role == "PATIENT"), metrics[0])
     m = child.metrics
     return (
-        f"MLU {m.mlu_morpheme:.1f}, TTR {m.ttr:.3f}, NDW {m.ndw} 수준 아동의 "
+        f"MLU {m.mlu_morpheme:.1f}, TTR {m.ttr:.3f}, NDW {m.ndw} 수준 환자의 "
         "언어 발달 평가와 적합한 중재 방법은?"
     )
