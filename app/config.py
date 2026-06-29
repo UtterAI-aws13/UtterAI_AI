@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     # 모델 이름 - Hugging Face Hub ID
     vad_model_name: str = "onnx-community/silero-vad"
     diarization_model_name: str = "pyannote/speaker-diarization-3.1"
-    asr_model_name: str = "Systran/faster-whisper-large-v3-turbo"
+    asr_model_name: str = "large-v3-turbo"
     embedding_model_name: str = "nlpai-lab/KURE-v1"
 
     # 디바이스 - CPU Worker와 GPU Worker를 분리 배포할 때 각각 다르게 설정
