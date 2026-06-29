@@ -76,19 +76,13 @@ class Settings(BaseSettings):
     # 모델 이름 - Hugging Face Hub ID
     vad_model_name: str = "onnx-community/silero-vad"
     diarization_model_name: str = "pyannote/speaker-diarization-3.1"
-    asr_model_name: str = "openai/whisper-large-v3-turbo"
+    asr_model_name: str = "Systran/faster-whisper-large-v3-turbo"
     embedding_model_name: str = "nlpai-lab/KURE-v1"
 
     # 디바이스 - CPU Worker와 GPU Worker를 분리 배포할 때 각각 다르게 설정
     asr_device: str = "cuda"
     diarization_device: str = "cuda"
 
-    # Whisper chunking - 긴 음성 추론 성능 향상
-    asr_chunk_length_s: int = 30    # Whisper 네이티브 컨텍스트 윈도우(30s)에 맞춤
-    asr_stride_length_s: int = 5    # 청크 경계 아티팩트 방지용 양쪽 오버랩
-    # batch_size=1 고정: transformers 4.47.1에서 batch_size>1로 3청크 이상 처리 시
-    # 타임스탬프 오프셋 오계산 버그로 60초 이상 오디오 전사문이 ~40초에서 잘림
-    asr_batch_size: int = 1
 
     # RAG 검색 파라미터
     rag_top_k: int = 5               # 검색 결과 상위 k개

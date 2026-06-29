@@ -4,6 +4,7 @@
 # 담당 단계: 화자 분리 + STT → transcript draft 저장 → 완료 (리포트 큐는 BE finalize가 발행)
 import asyncio
 import json
+import signal
 import threading
 
 import boto3
@@ -22,9 +23,12 @@ from app.models.diarization_pyannote import PyannoteWrapper
 from app.models.asr_whisper import WhisperASRWrapper
 from app.storage.rds import get_be_engine
 
+_shutdown = threading.Event()
 
-def _extend_visibility(sqs_client, queue_url: str, receipt_handle: str, stop_event: threading.Event, interval: int = 300) -> None:
-    while not stop_event.wait(interval):
+
+def _extend_visibility(sqs_client, queue_url: str, receipt_handle: str, stop_event: threading.Event, interval: int = 240) -> None:
+    # receive 직후 즉시 연장 후 interval마다 반복 — 큐 기본 visibility timeout에 무관하게 동작
+    while True:
         try:
             sqs_client.change_message_visibility(
                 QueueUrl=queue_url,
@@ -33,6 +37,8 @@ def _extend_visibility(sqs_client, queue_url: str, receipt_handle: str, stop_eve
             )
         except Exception as e:
             logger.warning(f"[heartbeat] VisibilityTimeout 연장 실패: {e}")
+        if stop_event.wait(interval):
+            break
 
 
 def _load_models() -> MLGpuModels:
@@ -47,9 +53,6 @@ def _load_models() -> MLGpuModels:
     asr = WhisperASRWrapper(
         settings.asr_model_name,
         device=settings.asr_device,
-        chunk_length_s=settings.asr_chunk_length_s,
-        stride_length_s=settings.asr_stride_length_s,
-        batch_size=settings.asr_batch_size,
     )
     asr.load()
     logger.info("Whisper ASR 로드 완료")
@@ -58,12 +61,14 @@ def _load_models() -> MLGpuModels:
 
 
 def start_worker() -> None:
+    signal.signal(signal.SIGTERM, lambda *_: _shutdown.set())
+
     initialize_observability()
     sqs = boto3.client("sqs", region_name=settings.aws_region)
     models = _load_models()
     logger.info(f"ML GPU Worker 시작. 큐: {settings.sqs_gpu_inference_queue_url}")
 
-    while True:
+    while not _shutdown.is_set():
         try:
             response = sqs.receive_message(
                 QueueUrl=settings.sqs_gpu_inference_queue_url,
