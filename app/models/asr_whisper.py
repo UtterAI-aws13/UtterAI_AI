@@ -110,8 +110,7 @@ class WhisperASRWrapper(BaseModelWrapper):
             pipeline_kwargs: dict = dict(
                 generate_kwargs={
                     "language": self.language,
-                    "condition_on_previous_text": False,
-                },
+                    },
                 return_timestamps=True,
                 batch_size=self.batch_size,
             )
@@ -184,7 +183,6 @@ class WhisperASRWrapper(BaseModelWrapper):
             {"raw": audio, "sampling_rate": sr},
             generate_kwargs={
                 "language": self.language,
-                "condition_on_previous_text": False,
             },
             return_timestamps=True,
             chunk_length_s=self.chunk_length_s,
