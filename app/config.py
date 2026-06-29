@@ -86,7 +86,9 @@ class Settings(BaseSettings):
     # Whisper chunking - 긴 음성 추론 성능 향상
     asr_chunk_length_s: int = 30    # Whisper 네이티브 컨텍스트 윈도우(30s)에 맞춤
     asr_stride_length_s: int = 5    # 청크 경계 아티팩트 방지용 양쪽 오버랩
-    asr_batch_size: int = 8         # GPU 병렬 처리 청크 수
+    # batch_size=1 고정: transformers 4.47.1에서 batch_size>1로 3청크 이상 처리 시
+    # 타임스탬프 오프셋 오계산 버그로 60초 이상 오디오 전사문이 ~40초에서 잘림
+    asr_batch_size: int = 1
 
     # RAG 검색 파라미터
     rag_top_k: int = 5               # 검색 결과 상위 k개
