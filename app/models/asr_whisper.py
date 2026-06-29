@@ -2,6 +2,8 @@
 # openai/whisper-large-v3-turbo 사용, GPU 권장
 # 한국어 음성을 텍스트로 전사하고 segment별 timestamp를 함께 반환한다
 # timestamp가 있어야 화자 분리 결과와 정렬(alignment)할 수 있다
+from loguru import logger
+
 from app.models.base import BaseModelWrapper
 from app.schemas import ASRResult, ASRSegment
 
@@ -46,13 +48,34 @@ class WhisperASRWrapper(BaseModelWrapper):
     def predict(self, audio_path: str) -> ASRResult:
         """음성 파일을 입력받아 전체 전사 텍스트와 timestamp 포함 구간 목록을 반환한다."""
         import soundfile as sf
+        import numpy as np
 
+        # 오디오를 numpy array로 직접 읽어 파이프라인에 전달한다.
+        # 파일 경로 전달 시 내부 ffmpeg 리샘플링과 soundfile 중복 읽기로
+        # 인코딩에 따라 길이가 다르게 계산되는 문제를 방지한다.
         audio, sr = sf.read(audio_path, dtype="float32")
+        if audio.ndim > 1:
+            audio = audio[:, 0]
+        if sr != 16000:
+            import librosa
+            audio = librosa.resample(audio, orig_sr=sr, target_sr=16000)
+            sr = 16000
         audio_duration = len(audio) / sr
 
+        logger.info(
+            f"[ASR] 오디오 로드 완료: duration={audio_duration:.2f}s, "
+            f"samples={len(audio)}, sr={sr}"
+        )
+
+        # condition_on_previous_text=False: 이전 청크 텍스트를 다음 청크 컨텍스트로
+        # 쓰지 않음. True(기본값)이면 이전 청크에서 발생한 할루시네이션이
+        # 이후 청크로 전파되어 조기 종료 또는 반복 루프가 생길 수 있다.
         result = self.pipeline(
-            audio_path,
-            generate_kwargs={"language": self.language},
+            {"raw": audio, "sampling_rate": sr},
+            generate_kwargs={
+                "language": self.language,
+                "condition_on_previous_text": False,
+            },
             return_timestamps=True,
             chunk_length_s=self.chunk_length_s,
             stride_length_s=(self.stride_length_s, self.stride_length_s),
@@ -62,7 +85,34 @@ class WhisperASRWrapper(BaseModelWrapper):
         full_text: str = result["text"].strip()
         raw_chunks: list[dict] = result.get("chunks", [])
 
+        # 파이프라인 원본 출력 진단 로그
+        if raw_chunks:
+            first_ts = raw_chunks[0].get("timestamp", (None, None))
+            last_ts = raw_chunks[-1].get("timestamp", (None, None))
+            logger.info(
+                f"[ASR] 파이프라인 원본: chunks={len(raw_chunks)}, "
+                f"first={first_ts}, last={last_ts}, "
+                f"audio_duration={audio_duration:.2f}s"
+            )
+            # 마지막 청크 end가 오디오 전체 길이 대비 얼마나 커버하는지 확인
+            last_end = last_ts[1] if last_ts[1] is not None else last_ts[0]
+            if last_end is not None and last_end < audio_duration - 5.0:
+                logger.warning(
+                    f"[ASR] 파이프라인 출력이 오디오보다 짧음: "
+                    f"last_end={last_end:.2f}s, audio_duration={audio_duration:.2f}s "
+                    f"(손실={audio_duration - last_end:.2f}s) — "
+                    f"Whisper 할루시네이션 또는 chunk 누락 가능성"
+                )
+        else:
+            logger.warning("[ASR] 파이프라인이 빈 chunks를 반환했습니다")
+
         segments = self._postprocess_chunks(raw_chunks, audio_duration)
+
+        logger.info(
+            f"[ASR] 후처리 완료: segments={len(segments)}, "
+            f"coverage={segments[-1].end_time:.2f}s/{audio_duration:.2f}s"
+            if segments else "[ASR] 후처리 결과 없음"
+        )
 
         return ASRResult(text=full_text, segments=segments)
 
