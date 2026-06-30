@@ -26,6 +26,20 @@ from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.storage.rds import get_be_engine
 
 
+def _extend_report_visibility(sqs, queue_url: str, receipt_handle: str, stop_event: threading.Event, interval: int = 240) -> None:
+    while True:
+        try:
+            sqs.change_message_visibility(
+                QueueUrl=queue_url,
+                ReceiptHandle=receipt_handle,
+                VisibilityTimeout=1800,
+            )
+        except Exception as e:
+            logger.warning(f"[report-heartbeat] VisibilityTimeout 연장 실패: {e}")
+        if stop_event.wait(interval):
+            break
+
+
 def _load_models() -> CPUModels:
     vad = SileroVADWrapper(settings.vad_model_name)
     vad.load()
@@ -103,9 +117,10 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
         if not messages:
             continue
 
+        raw = messages[0]
+        receipt_handle = raw["ReceiptHandle"]
+
         try:
-            raw = messages[0]
-            receipt_handle = raw["ReceiptHandle"]
             body = json.loads(raw["Body"])
             job_id = body.get("job_id", "unknown")
             logger.info(f"[report-loop] 메시지 수신 job_id={job_id} transcript_id={body.get('transcript_id')}")
@@ -113,6 +128,14 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
         except Exception as e:
             logger.exception(f"[report-loop] 메시지 파싱 실패: {e}")
             continue
+
+        stop_event = threading.Event()
+        heartbeat = threading.Thread(
+            target=_extend_report_visibility,
+            args=(sqs, settings.sqs_report_analysis_queue_url, receipt_handle, stop_event),
+            daemon=True,
+        )
+        heartbeat.start()
 
         try:
             tracer = trace.get_tracer(__name__)
@@ -143,6 +166,16 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
         except Exception as e:
             record_stage_failure("cpu-worker", "report")
             logger.exception(f"[report-loop] REPORT STAGE 실패 job_id={job_id}: {e}")
+            try:
+                sqs.change_message_visibility(
+                    QueueUrl=settings.sqs_report_analysis_queue_url,
+                    ReceiptHandle=receipt_handle,
+                    VisibilityTimeout=0,
+                )
+            except Exception as vis_e:
+                logger.warning(f"[report-loop] VisibilityTimeout 즉시 해제 실패: {vis_e}")
+        finally:
+            stop_event.set()
 
 
 def start_worker() -> None:
