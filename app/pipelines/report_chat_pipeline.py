@@ -66,7 +66,7 @@ def _build_user_prompt(
     history: list[dict],
 ) -> str:
     segment_text = "\n".join(
-        f"[{seg['section']}] {seg.get('title', '')}\n{seg.get('content', '(내용 없음)')}"
+        f"[{seg['section']}] {seg.get('title', '')}\n{seg.get('content') or '(내용 없음)'}"
         for seg in segments
     )
 
