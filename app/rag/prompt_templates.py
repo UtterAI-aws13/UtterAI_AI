@@ -165,6 +165,52 @@ def build_template_report_prompt(
 """
 
 
+def build_session_prompt(
+    metrics: dict,
+    utterances: list[dict],
+    session: dict,
+) -> str:
+    """AgentCore 에이전트용 프롬프트 생성. 근거 검색은 AgentCore가 tool로 직접 수행한다."""
+    age_months = session.get("patient_age_months", 0)
+    age_str = f"만 {age_months // 12}세 {age_months % 12}개월" if age_months else "나이 미상"
+
+    mlu_val = metrics.get("mlu_morpheme") or metrics.get("mlu_word", "N/A")
+    mlu_label = "MLU-m (형태소)" if metrics.get("mlu_morpheme") else "MLU (단어 근사)"
+    metrics_text = (
+        f"- {mlu_label}: {mlu_val}\n"
+        f"- NTW: {metrics.get('ntw', 'N/A')}\n"
+        f"- NDW: {metrics.get('ndw', 'N/A')}\n"
+        f"- TTR: {metrics.get('ttr', 'N/A')}\n"
+        f"- 평균 반응 지연: {metrics.get('avg_response_latency_sec', 'N/A')}초\n"
+        f"- 최대 반응 지연: {metrics.get('max_response_latency_sec', 'N/A')}초\n"
+        f"- 총 발화 수: {metrics.get('total_utterances', 'N/A')}"
+    )
+
+    utterance_text = "\n".join(
+        f"{u.get('speaker_role', 'UNKNOWN')}: {u.get('text', '')}"
+        for u in utterances
+    )
+
+    session_info = (
+        f"- 환자 연령: {age_str}\n"
+        f"- 세션 번호: {session.get('session_number', 'N/A')}회\n"
+        f"- 세션 날짜: {session.get('session_date', 'N/A')}"
+    )
+
+    return f"""## 세션 정보
+{session_info}
+
+## 언어 지표 (환자)
+{metrics_text}
+
+## 전체 발화
+{utterance_text}
+
+## 출력 형식
+{REPORT_OUTPUT_SCHEMA}
+"""
+
+
 def build_report_prompt(
     utterances: list[Utterance],
     metrics: list[SpeakerMetrics],

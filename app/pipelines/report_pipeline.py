@@ -132,20 +132,24 @@ async def run_bedrock_report_stage(
     db,
     embedding_model=None,
 ) -> None:
-    """transcript_segments를 RDS에서 읽어 RAG + Bedrock Claude로 리포트를 생성하고 저장한다."""
+    """transcript_segments를 RDS에서 읽어 AgentCore 에이전트로 리포트를 생성하고 저장한다.
+
+    비템플릿 경로: AgentCore가 search_evidence tool을 통해 RAG 검색과 SOAP Note 생성을 통합 처리한다.
+    템플릿 경로: 커스텀 섹션 출력 형식이 AgentCore 시스템 프롬프트와 다르므로 기존 Bedrock 경로를 유지한다.
+    """
     from loguru import logger
-    from app.pipelines.bedrock_client import invoke_claude
-    from app.rag.prompt_templates import build_bedrock_report_prompt
-    from app.rag.retriever import retrieve_evidence
+    from app.pipelines.agentcore_client import invoke_agent
+    from app.rag.prompt_templates import build_session_prompt
     from app.storage.rds import get_transcript_segments, get_session_context, save_report, update_session_status
     from app.config import settings
 
     job_id = message.job_id
     session_id = message.session_id
     transcript_id = message.transcript_id
+    report_saved = False
 
     try:
-        logger.info(f"[{job_id}] REPORT STAGE: LOADING TRANSCRIPT transcript_id={transcript_id}")
+        logger.info(f"[{job_id}] REPORT STAGE: LOADING TRANSCRIPT transcript_id={transcript_id} final_s3_key={message.final_s3_key!r}")
         if message.final_s3_key:
             from app.storage.s3_client import get_bytes
             raw = get_bytes(settings.s3_bucket_transcript, message.final_s3_key)
@@ -159,7 +163,7 @@ async def run_bedrock_report_stage(
 
         logger.info(f"[{job_id}] REPORT STAGE: COMPUTING METRICS ({len(segments)} segments)")
         metrics = _compute_metrics_from_segments(segments)
-        logger.debug(f"[{job_id}] REPORT STAGE: metrics={metrics}")
+        logger.info(f"[{job_id}] REPORT STAGE: metrics={metrics}")
 
         logger.info(f"[{job_id}] REPORT STAGE: LOADING SESSION CONTEXT")
         session_ctx = await get_session_context(db, session_id)
@@ -184,26 +188,32 @@ async def run_bedrock_report_stage(
             f"[{job_id}] REPORT STAGE: utterances patient={len(patient_utterances)} all={len(all_utterances)}"
         )
 
-        logger.info(f"[{job_id}] REPORT STAGE: RAG 시작")
-        evidence = await retrieve_evidence(
-            metrics=metrics,
-            session=session,
-            embedding_model=embedding_model,
-        )
-        logger.info(f"[{job_id}] REPORT STAGE: RAG 완료 evidence={len(evidence)}")
-
-        logger.info(f"[{job_id}] REPORT STAGE: BEDROCK 호출 시작 model={settings.bedrock_report_model_id}")
-
         template_id = message.template_id
         template_sections = None
         if template_id:
             from app.storage.rds import get_template_sections
-            from app.rag.prompt_templates import build_template_report_prompt
             logger.info(f"[{job_id}] REPORT STAGE: 템플릿 섹션 조회 template_id={template_id}")
             template_sections = await get_template_sections(db, template_id)
             logger.info(f"[{job_id}] REPORT STAGE: 템플릿 섹션 {len(template_sections) if template_sections else 0}개")
 
+        custom_sections_to_save = None
+        soap_note = {}
+        evidence_chunk_ids: list[str] = []
+
         if template_sections:
+            # 커스텀 템플릿: 기존 Bedrock 직접 호출 경로 유지 (AgentCore 시스템 프롬프트와 출력 형식이 다름)
+            from app.pipelines.bedrock_client import invoke_claude
+            from app.rag.retriever import retrieve_evidence
+            from app.rag.prompt_templates import build_template_report_prompt
+
+            logger.info(f"[{job_id}] REPORT STAGE: [TEMPLATE] RAG 시작")
+            evidence = await retrieve_evidence(
+                metrics=metrics,
+                session=session,
+                embedding_model=embedding_model,
+            )
+            logger.info(f"[{job_id}] REPORT STAGE: [TEMPLATE] RAG 완료 evidence={len(evidence)}")
+
             prompt = build_template_report_prompt(
                 metrics=metrics,
                 utterances=patient_utterances or all_utterances,
@@ -211,24 +221,11 @@ async def run_bedrock_report_stage(
                 evidence=evidence,
                 sections=template_sections,
             )
-        else:
-            prompt = build_bedrock_report_prompt(
-                metrics=metrics,
-                utterances=patient_utterances or all_utterances,
-                session=session,
-                evidence=evidence,
-            )
+            logger.debug(f"[{job_id}] REPORT STAGE: [TEMPLATE] prompt_len={len(prompt)}")
+            report_data = invoke_claude(prompt)
+            logger.info(f"[{job_id}] REPORT STAGE: [TEMPLATE] BEDROCK 완료 keys={list(report_data.keys())}")
 
-        logger.debug(f"[{job_id}] REPORT STAGE: prompt_len={len(prompt)}")
-        report_data = invoke_claude(prompt)
-        logger.info(f"[{job_id}] REPORT STAGE: BEDROCK 호출 완료 keys={list(report_data.keys())}")
-
-        clinical_flags = report_data.get("clinical_flags", [])
-        evidence_chunk_ids = [e.get("chunk_id", "") for e in evidence if isinstance(e, dict)]
-
-        custom_sections_to_save = None
-        soap_note = {}
-        if template_sections:
+            evidence_chunk_ids = [e.get("chunk_id", "") for e in evidence if isinstance(e, dict)]
             raw_sections = report_data.get("sections", {})
             custom_sections_to_save = [
                 {
@@ -239,10 +236,21 @@ async def run_bedrock_report_stage(
                 for s in template_sections
             ]
         else:
+            # 기본 경로: AgentCore가 search_evidence tool로 RAG 검색과 SOAP Note 생성을 통합 처리
+            logger.info(f"[{job_id}] REPORT STAGE: AGENTCORE 호출 시작 session_id={session_id}")
+            prompt = build_session_prompt(
+                metrics=metrics,
+                utterances=patient_utterances or all_utterances,
+                session=session,
+            )
+            logger.debug(f"[{job_id}] REPORT STAGE: prompt_len={len(prompt)}")
+            report_data = invoke_agent(prompt=prompt, session_id=session_id)
+            logger.info(f"[{job_id}] REPORT STAGE: AGENTCORE 완료 keys={list(report_data.keys())}")
             soap_note = report_data.get("soap_note", {})
 
+        clinical_flags = report_data.get("clinical_flags", [])
+
         logger.info(f"[{job_id}] REPORT STAGE: SAVING")
-        report_saved = False
         await save_report(
             db=db,
             job_id=job_id,

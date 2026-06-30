@@ -47,25 +47,33 @@ async def retrieve_evidence(
     session: dict,
     top_k: int = 5,
     embedding_model: KUREEmbeddingWrapper | None = None,
+    direct_query: str | None = None,
 ) -> list[dict]:
-    """Bedrock 파이프라인용 간편 검색 함수. RagEvidence 대신 dict 목록 반환."""
+    """Bedrock 파이프라인용 간편 검색 함수. RagEvidence 대신 dict 목록 반환.
+
+    direct_query가 주어지면 해당 문자열을 그대로 임베딩 쿼리로 사용한다.
+    Lambda 핸들러(kure_retriever)에서 AgentCore tool 호출 시 이 경로를 사용한다.
+    """
     from sqlalchemy.ext.asyncio import AsyncSession
     from app.config import settings
 
-    age_months = session.get("patient_age_months", 0)
-    # report_pipeline._compute_metrics_from_segments는 mlu_word 키로 저장한다.
-    # 이전 코드가 mlu_morpheme을 읽어 항상 0이 되던 버그를 수정한다.
-    mlu = metrics.get("mlu_word", metrics.get("mlu_morpheme", 0))
-    ttr = metrics.get("ttr", 0)
-    ndw = metrics.get("ndw", 0)
-    latency = metrics.get("avg_response_latency_sec", 0)
+    if direct_query:
+        question = direct_query
+    else:
+        age_months = session.get("patient_age_months", 0)
+        # report_pipeline._compute_metrics_from_segments는 mlu_word 키로 저장한다.
+        # 이전 코드가 mlu_morpheme을 읽어 항상 0이 되던 버그를 수정한다.
+        mlu = metrics.get("mlu_word", metrics.get("mlu_morpheme", 0))
+        ttr = metrics.get("ttr", 0)
+        ndw = metrics.get("ndw", 0)
+        latency = metrics.get("avg_response_latency_sec", 0)
 
-    question = (
-        f"만 {age_months // 12}세 아동 언어치료 세션. "
-        f"MLU {mlu:.1f}, NDW {ndw}, TTR {ttr:.3f}, "
-        f"평균 반응 지연 {latency:.2f}초. "
-        f"이 지표를 SOAP Note에 어떻게 해석하고 기록해야 하는가?"
-    )
+        question = (
+            f"만 {age_months // 12}세 환자 언어치료 세션. "
+            f"MLU {mlu:.1f}, NDW {ndw}, TTR {ttr:.3f}, "
+            f"평균 반응 지연 {latency:.2f}초. "
+            f"이 지표를 SOAP Note에 어떻게 해석하고 기록해야 하는가?"
+        )
 
     model = embedding_model if embedding_model is not None else _get_embedding_model()
     query_embedding = model.predict([question])[0]
