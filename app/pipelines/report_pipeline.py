@@ -235,8 +235,8 @@ async def run_bedrock_report_stage(
                 }
                 for s in template_sections
             ]
-        else:
-            # 기본 경로: AgentCore가 search_evidence tool로 RAG 검색과 SOAP Note 생성을 통합 처리
+        elif settings.agentcore_agent_id:
+            # AgentCore 경로: search_evidence tool로 RAG 검색과 SOAP Note 생성을 통합 처리
             logger.info(f"[{job_id}] REPORT STAGE: AGENTCORE 호출 시작 session_id={session_id}")
             prompt = build_session_prompt(
                 metrics=metrics,
@@ -246,6 +246,30 @@ async def run_bedrock_report_stage(
             logger.debug(f"[{job_id}] REPORT STAGE: prompt_len={len(prompt)}")
             report_data = invoke_agent(prompt=prompt, session_id=session_id)
             logger.info(f"[{job_id}] REPORT STAGE: AGENTCORE 완료 keys={list(report_data.keys())}")
+            soap_note = report_data.get("soap_note", {})
+        else:
+            # Fallback: AgentCore 미설정 시 기존 Bedrock 직접 호출 경로
+            from app.pipelines.bedrock_client import invoke_claude
+            from app.rag.retriever import retrieve_evidence
+            from app.rag.prompt_templates import build_bedrock_report_prompt
+
+            logger.info(f"[{job_id}] REPORT STAGE: [FALLBACK] RAG 시작 (agentcore_agent_id 미설정)")
+            evidence = await retrieve_evidence(
+                metrics=metrics,
+                session=session,
+                embedding_model=embedding_model,
+            )
+            logger.info(f"[{job_id}] REPORT STAGE: [FALLBACK] RAG 완료 evidence={len(evidence)}")
+            prompt = build_bedrock_report_prompt(
+                metrics=metrics,
+                utterances=patient_utterances or all_utterances,
+                session=session,
+                evidence=evidence,
+            )
+            logger.debug(f"[{job_id}] REPORT STAGE: [FALLBACK] prompt_len={len(prompt)}")
+            report_data = invoke_claude(prompt)
+            logger.info(f"[{job_id}] REPORT STAGE: [FALLBACK] BEDROCK 완료 keys={list(report_data.keys())}")
+            evidence_chunk_ids = [e.get("chunk_id", "") for e in evidence if isinstance(e, dict)]
             soap_note = report_data.get("soap_note", {})
 
         clinical_flags = report_data.get("clinical_flags", [])

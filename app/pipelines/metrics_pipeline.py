@@ -1,13 +1,16 @@
 # 언어 지표 계산 파이프라인
-# Utterance 목록을 받아 화자별로 MLU, NDW, NTW, TTR, 반응 지연 시간을 계산한다
+# Utterance 목록을 받아 화자별로 언어 지표를 계산한다.
 #
 # response_latency는 전체 발화 흐름에서 SLP→PATIENT 전환 구간을 탐색하므로
 # 화자 그룹별이 아닌 전체 utterances를 시간순으로 정렬한 뒤 한 번만 계산한다.
 # 결과는 PATIENT 화자의 LanguageMetrics에만 포함하고, 나머지 화자는 None으로 둔다.
+#
+# FCM 예측도 PATIENT 화자에게만 제공한다.
 from collections import defaultdict
 
-from app.schemas import Utterance, LanguageMetrics, SpeakerMetrics
-from app.metrics import mlu, lexical_diversity, response_latency
+from app.metrics import ciu, disfluency, fcm, lexical_diversity, llu, mlu, pcc, response_latency
+from app.schemas import LanguageMetrics, SpeakerMetrics, Utterance
+from app.schemas.metrics import DisfluencyMetrics, FCMEstimateSchema
 
 
 def calculate_metrics(utterances: list[Utterance], session_id: str) -> list[SpeakerMetrics]:
@@ -34,19 +37,52 @@ def calculate_metrics(utterances: list[Utterance], session_id: str) -> list[Spea
     for speaker_id, utts in groups.items():
         speaker_role = utts[0].speaker_role
 
+        # 기존 지표
         mlu_val = mlu.calculate_mlu(utts)
         ntw_val = lexical_diversity.calculate_ntw(utts)
         ndw_val = lexical_diversity.calculate_ndw(utts)
         ttr_val = lexical_diversity.calculate_ttr(utts)
 
-        # 반응 지연 시간은 PATIENT 화자에게만 의미 있는 지표
+        # 신규 지표
+        llu_m = llu.calculate_llu_morpheme(utts)
+        llu_w = llu.calculate_llu_word(utts)
+        pcc_val = pcc.calculate_pcc(utts)
+
+        dis_result = disfluency.calculate_disfluency(utts)
+        dis_metrics = DisfluencyMetrics(
+            filler_count=dis_result.filler_count,
+            repetition_count=dis_result.repetition_count,
+            prolongation_count=dis_result.prolongation_count,
+            total_count=dis_result.total_disfluency,
+            rate=dis_result.disfluency_rate,
+        )
+
+        ciu_result = ciu.calculate_ciu(utts)
+
+        # 반응 지연 시간·FCM 예측은 PATIENT 화자에게만 의미 있는 지표
         latency = global_latency if speaker_role == "PATIENT" else None
+        fcm_estimate: FCMEstimateSchema | None = None
+        if speaker_role == "PATIENT":
+            fcm_raw = fcm.estimate_fcm_range(
+                mlu_morpheme=mlu_val,
+                disfluency_rate=dis_result.disfluency_rate,
+                ciu_rate=ciu_result.ciu_rate,
+            )
+            fcm_estimate = FCMEstimateSchema(
+                low=fcm_raw.low,
+                high=fcm_raw.high,
+                note=fcm_raw.note,
+            )
 
         warnings: list[str] = []
         if speaker_role == "UNKNOWN":
             warnings.append("speaker_role_not_assigned")
         if all(len(u.morphemes) == 0 for u in utts):
             warnings.append("morphemes_empty_mlu_may_be_zero")
+        if pcc_val is None:
+            warnings.append("pcc_unavailable_no_target_text")
+        if ciu_result.total_morphemes == 0:
+            warnings.append("ciu_unavailable_morphemes_empty")
 
         metrics = LanguageMetrics(
             session_id=session_id,
@@ -57,6 +93,13 @@ def calculate_metrics(utterances: list[Utterance], session_id: str) -> list[Spea
             ttr=round(ttr_val, 4),
             mlu_morpheme=round(mlu_val, 2),
             avg_response_latency_sec=latency,
+            llu_morpheme=llu_m,
+            llu_word=llu_w,
+            pcc=pcc_val,
+            disfluency=dis_metrics,
+            ciu_count=ciu_result.ciu_count,
+            ciu_rate=ciu_result.ciu_rate,
+            fcm_estimate=fcm_estimate,
             warnings=warnings,
         )
 
