@@ -22,6 +22,8 @@ COPY app ./app
 
 ENV PYTHONPATH=/app
 ENV PATH="/app/.venv/bin:$PATH"
+ENV HF_HOME=/tmp/huggingface
+ENV TRANSFORMERS_CACHE=/tmp/huggingface
 
 RUN adduser --disabled-password --uid 1000 appuser
 USER 1000
