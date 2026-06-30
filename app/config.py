@@ -73,6 +73,10 @@ class Settings(BaseSettings):
     bedrock_region: str = "ap-northeast-2"
     bedrock_report_model_id: str = "global.anthropic.claude-haiku-4-5-20251001-v1:0"
 
+    # AgentCore — AWS 콘솔에서 생성한 Agent ID와 Alias ID를 환경 변수로 주입
+    agentcore_agent_id: str = ""
+    agentcore_agent_alias_id: str = "PROD"
+
     # 모델 이름 - Hugging Face Hub ID
     vad_model_name: str = "onnx-community/silero-vad"
     diarization_model_name: str = "pyannote/speaker-diarization-3.1"
