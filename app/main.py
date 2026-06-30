@@ -5,6 +5,7 @@ from fastapi import FastAPI
 
 from app.observability.otel import initialize_observability, instrument_fastapi_app
 from app.api import health, jobs, rag
+from app.api.report_chat import router as report_chat_router
 
 app = FastAPI(title="UtterAI AI Module", version="0.1.0")
 
@@ -13,4 +14,5 @@ initialize_observability()
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(jobs.router, prefix="/internal/ai/analysis-jobs", tags=["analysis-jobs"])
 app.include_router(rag.router, prefix="/ai/rag", tags=["rag"])
+app.include_router(report_chat_router, prefix="/ai", tags=["report-chat"])
 instrument_fastapi_app(app)
