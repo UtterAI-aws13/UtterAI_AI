@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from app.pipelines.report_chat_pipeline import run_report_chat
+from app.agents.report_editing_chatbot.agent import run_agent
 
 router = APIRouter()
 
@@ -26,7 +26,7 @@ class ReportChatResponse(BaseModel):
 
 @router.post("/report-chat", response_model=ReportChatResponse)
 def report_chat(request: ReportChatRequest) -> ReportChatResponse:
-    result = run_report_chat(
+    result = run_agent(
         report_id=request.report_id,
         report_version=request.report_version,
         message=request.message,
