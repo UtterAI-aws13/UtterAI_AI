@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>UtterAI Knowledge Graph</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0f1117; color: #cdd6f4; font-family: 'SF Mono','Fira Code',monospace; overflow: hidden; height: 100vh; }
+#graph { width: 100vw; height: 100vh; }
+
+/* ── edges ── */
+.link { transition: stroke 0.15s, opacity 0.15s; }
+.link-rag   { stroke: #45475a; stroke-width: 1.8; }
+.link-cross { stroke: #313244; stroke-width: 1.2; stroke-dasharray: 5 3; }
+.link-paper { stroke: #1e1e2e; stroke-width: 1; stroke-dasharray: 2 4; }
+.link.highlighted { stroke-width: 2.5 !important; opacity: 1 !important; }
+.link.dimmed { opacity: 0.04 !important; }
+
+/* ── nodes ── */
+.node circle { cursor: pointer; stroke-width: 1.8; transition: filter 0.2s; }
+.node circle:hover { filter: drop-shadow(0 0 9px currentColor); }
+.node.highlighted circle { stroke: #fff !important; filter: drop-shadow(0 0 10px #cdd6f4); }
+.node.dimmed circle { opacity: 0.12; }
+.node.dimmed text { opacity: 0.08; }
+.node text {
+  font-size: 10px; fill: #cdd6f4; pointer-events: none;
+  text-shadow: 0 1px 4px #0f1117, 0 0 8px #0f1117;
+}
+.node.rag-node text { font-size: 11px; font-weight: 600; }
+
+/* ── tooltip ── */
+#tooltip {
+  position: fixed; background: #1e1e2e; border: 1px solid #313244;
+  border-radius: 8px; padding: 10px 14px; font-size: 11px;
+  max-width: 320px; pointer-events: none; opacity: 0;
+  transition: opacity 0.12s; z-index: 20; line-height: 1.7;
+}
+#tooltip.visible { opacity: 1; }
+#tooltip .tt-title { font-weight: 700; font-size: 12px; color: #89b4fa; margin-bottom: 4px; }
+#tooltip .tt-badge {
+  display: inline-block; font-size: 9px; padding: 1px 5px;
+  border-radius: 4px; margin-right: 3px; margin-bottom: 5px; font-weight: 700;
+}
+#tooltip .tt-desc { color: #a6adc8; font-size: 11px; margin-top: 3px; }
+#tooltip .tt-meta { color: #6c7086; font-size: 10px; margin-top: 4px; }
+
+/* ── legend ── */
+#legend {
+  position: fixed; top: 14px; left: 14px;
+  background: rgba(30,30,46,0.88); border: 1px solid #313244;
+  border-radius: 8px; padding: 10px 14px; backdrop-filter: blur(8px);
+}
+#legend h3 { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: #6c7086; margin-bottom: 7px; }
+.legend-section { margin-bottom: 9px; }
+.legend-section:last-child { margin-bottom: 0; }
+.legend-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 10px; }
+.legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.legend-rect { width: 12px; height: 4px; border-radius: 2px; flex-shrink: 0; }
+.legend-label { color: #a6adc8; }
+
+/* ── controls ── */
+#controls {
+  position: fixed; top: 14px; right: 14px;
+  background: rgba(30,30,46,0.88); border: 1px solid #313244;
+  border-radius: 8px; padding: 10px 14px; backdrop-filter: blur(8px);
+}
+#controls h3 { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: #6c7086; margin-bottom: 7px; }
+.ctrl-btn {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 5px;
+  cursor: pointer; font-size: 10px; color: #a6adc8; user-select: none;
+}
+.ctrl-btn input { accent-color: #89b4fa; }
+.ctrl-btn:hover { color: #cdd6f4; }
+
+/* ── hint ── */
+#hint { position: fixed; bottom: 12px; right: 14px; color: #45475a; font-size: 9px; text-align: right; line-height: 1.9; }
+</style>
+</head>
+<body>
+<svg id="graph"></svg>
+<div id="tooltip"></div>
+
+<div id="legend">
+  <div class="legend-section">
+    <h3>RAG 가이드 (원형 큰)</h3>
+    <div class="legend-row"><div class="legend-dot" style="background:#89b4fa;border:1.5px solid #89b4fa"></div><div class="legend-label">지표 계산 규칙</div></div>
+    <div class="legend-row"><div class="legend-dot" style="background:#f38ba8;border:1.5px solid #f38ba8"></div><div class="legend-label">성인 임상</div></div>
+    <div class="legend-row"><div class="legend-dot" style="background:#a6e3a1;border:1.5px solid #a6e3a1"></div><div class="legend-label">아동 임상</div></div>
+    <div class="legend-row"><div class="legend-dot" style="background:#fab387;border:1.5px solid #fab387"></div><div class="legend-label">AAC</div></div>
+    <div class="legend-row"><div class="legend-dot" style="background:#cba6f7;border:1.5px solid #cba6f7"></div><div class="legend-label">임상 문서화</div></div>
+  </div>
+  <div class="legend-section">
+    <h3>논문 (원형 작음)</h3>
+    <div class="legend-row"><div class="legend-dot" style="background:#94e2d5;border:1.5px solid #94e2d5;opacity:0.7"></div><div class="legend-label">preschool</div></div>
+    <div class="legend-row"><div class="legend-dot" style="background:#89dceb;border:1.5px solid #89dceb;opacity:0.7"></div><div class="legend-label">school_age</div></div>
+    <div class="legend-row"><div class="legend-dot" style="background:#f2cdcd;border:1.5px solid #f2cdcd;opacity:0.7"></div><div class="legend-label">adult</div></div>
+    <div class="legend-row"><div class="legend-dot" style="background:#a6adc8;border:1.5px solid #a6adc8;opacity:0.7"></div><div class="legend-label">all / PDF</div></div>
+  </div>
+</div>
+
+<div id="controls">
+  <h3>엣지 표시</h3>
+  <label class="ctrl-btn"><input type="checkbox" id="tog-rag" checked> RAG ↔ RAG (가이드 간)</label>
+  <label class="ctrl-btn"><input type="checkbox" id="tog-cross" checked> RAG ↔ 논문 (교차)</label>
+  <label class="ctrl-btn"><input type="checkbox" id="tog-paper"> 논문 ↔ 논문 (메트릭 공유)</label>
+</div>
+
+<div id="hint">스크롤: 줌 &nbsp;|&nbsp; 드래그: 이동<br>노드 클릭: 이웃 강조 &nbsp;|&nbsp; 배경 클릭: 초기화</div>
+
+<script>
+// ──────────────────────────────────────────────
+// DATA
+// ──────────────────────────────────────────────
+const RAG_CAT = {
+  metric:   "#89b4fa",
+  adult:    "#f38ba8",
+  child:    "#a6e3a1",
+  aac:      "#fab387",
+  clinical: "#cba6f7",
+};
+const PAPER_AGE = {
+  preschool:   "#94e2d5",
+  school_age:  "#89dceb",
+  adult:       "#f2cdcd",
+  all:         "#a6adc8",
+  pdf:         "#a6adc8",
+};
+
+const NODES = [
+  // ── RAG: 지표 계산 ──
+  { id:"r_exception",        label:"제외기준",     cat:"rag", ragCat:"metric",   r:16, desc:"MLU·PCC·CIU 등 모든 지표 계산 시 공통 제외 기준", file:"doc_metric_exception_rule" },
+  { id:"r_mlu",              label:"MLU 규칙",     cat:"rag", ragCat:"metric",   r:16, desc:"한국어 MLU 계산 규칙. 형태소 기반 분석 기준",      file:"doc_metric_mlu_korean_rule" },
+  { id:"r_pcc",              label:"PCC 규칙",     cat:"rag", ragCat:"metric",   r:15, desc:"한국어 PCC 계산 규칙. 조음 정확도 측정",             file:"doc_metric_pcc_korean_rule" },
+  { id:"r_ciu",              label:"CIU 규칙",     cat:"rag", ragCat:"metric",   r:15, desc:"한국어 CIU 계산 규칙. 담화 정보 전달 효율",          file:"doc_metric_ciu_korean_rule" },
+  { id:"r_lsa_metrics",     label:"LSA 핵심지표",  cat:"rag", ragCat:"metric",   r:17, desc:"언어표본분석 핵심 지표 전체 개요 (MLU·LLU·PCC·CIU·NDW·TTR·Disfluency·FCM)", file:"doc_language_sample_metrics" },
+  { id:"r_llu",             label:"LLU 규칙",     cat:"rag", ragCat:"metric",   r:14, desc:"최장 발화 길이(LLU) 계산 규칙. 형태소/어절 기준 상한 측정",  file:"doc_metric_llu_rule" },
+  { id:"r_disfluency_rule", label:"비유창성 계산",  cat:"rag", ragCat:"metric",   r:15, desc:"비유창성 빈도 계산 규칙. 간투사·반복·연장 유형별 탐지 기준", file:"doc_metric_disfluency_rule" },
+  { id:"r_morphosyntax",    label:"형태통사 가이드", cat:"rag", ragCat:"metric",  r:14, desc:"한국어 형태통사 임상 가이드. 교착어 특성 반영",       file:"doc_korean_morphosyntax" },
+  // ── RAG: 성인 임상 ──
+  { id:"r_adult_slp",       label:"성인 SLP 가이드", cat:"rag", ragCat:"adult",  r:20, desc:"성인 언어재활 평가 및 지표 총괄 가이드 (실어증·TBI·치매·말운동)", file:"doc_adult_slp_guide" },
+  { id:"r_adult_discourse", label:"성인 담화 분석", cat:"rag", ragCat:"adult",   r:16, desc:"성인 신경언어장애 담화 평가 지표 가이드",             file:"doc_adult_discourse" },
+  { id:"r_dysarthria",      label:"마비말장애",     cat:"rag", ragCat:"adult",   r:14, desc:"성인 마비말장애 평가 및 중재 가이드",                 file:"doc_dysarthria_types" },
+  { id:"r_tbi",             label:"TBI 인지-의사소통", cat:"rag", ragCat:"adult", r:14, desc:"외상성 뇌손상 인지-의사소통 장애 가이드",            file:"doc_tbi_cognitive_comm" },
+  { id:"r_dementia",        label:"치매 의사소통",   cat:"rag", ragCat:"adult",  r:13, desc:"치매 단계별 의사소통 지원 가이드",                   file:"doc_dementia_language" },
+  { id:"r_voice",           label:"음성장애",       cat:"rag", ragCat:"adult",   r:12, desc:"음성장애 평가 및 중재 가이드",                       file:"doc_voice_disorders" },
+  // ── RAG: 아동 임상 ──
+  { id:"r_child_pop",       label:"아동 SLP 대상군", cat:"rag", ragCat:"child",  r:20, desc:"아동 언어재활 대상군 전체 개요",                     file:"doc_child_slp_population" },
+  { id:"r_child_tools",     label:"아동 표준검사",   cat:"rag", ragCat:"child",  r:14, desc:"아동 언어재활 표준화 검사 도구 가이드",              file:"doc_child_assessment_tools" },
+  { id:"r_asd",             label:"ASD 화용",       cat:"rag", ragCat:"child",   r:16, desc:"ASD 아동 화용·사회적 의사소통 평가 가이드",          file:"doc_asd_pragmatics" },
+  { id:"r_dld",             label:"DLD vs 지연",    cat:"rag", ragCat:"child",   r:16, desc:"언어발달지연과 DLD 감별 가이드",                     file:"doc_dld_vs_delay" },
+  { id:"r_receptive",       label:"수용언어",       cat:"rag", ragCat:"child",   r:13, desc:"수용언어 장애 평가 및 중재 가이드",                  file:"doc_receptive_language_guide" },
+  { id:"r_school_age",      label:"학령기 언어",    cat:"rag", ragCat:"child",   r:15, desc:"학령기 언어장애 평가 및 중재 가이드",                file:"doc_school_age_guide" },
+  { id:"r_narrative",       label:"이야기 중재",    cat:"rag", ragCat:"child",   r:13, desc:"아동 내러티브 중재 가이드",                          file:"doc_narrative_intervention" },
+  { id:"r_milieu",          label:"환경중심 교수법", cat:"rag", ragCat:"child",  r:12, desc:"환경중심 언어 교수법 (Milieu Teaching) 가이드",      file:"doc_milieu_teaching" },
+  { id:"r_fluency",         label:"유창성장애",     cat:"rag", ragCat:"child",   r:15, desc:"유창성 장애 평가 및 중재 (아동·성인 공통)",          file:"doc_fluency_guide" },
+  // ── RAG: AAC ──
+  { id:"r_aac_adult",       label:"성인 AAC",       cat:"rag", ragCat:"aac",     r:13, desc:"성인 AAC 도입 및 전환 가이드",                       file:"doc_aac_adult" },
+  { id:"r_aac_child",       label:"아동 AAC",       cat:"rag", ragCat:"aac",     r:13, desc:"아동 AAC 선별 및 초기 중재 가이드",                  file:"doc_aac_child" },
+  // ── RAG: 임상 문서화 ──
+  { id:"r_goal",            label:"목표 작성",      cat:"rag", ragCat:"clinical", r:15, desc:"임상 목표 작성 가이드 (SOAP Note Plan 섹션)",        file:"doc_goal_writing_guide" },
+  { id:"r_safety",          label:"리포트 안전규칙", cat:"rag", ragCat:"clinical", r:13, desc:"임상 리포트 단정 표현 금지 등 안전 작성 규칙",       file:"doc_report_safety_rule" },
+  { id:"r_fcm",             label:"기능적 의사소통", cat:"rag", ragCat:"clinical", r:14, desc:"기능적 의사소통 결과 기록 가이드 (ICF 기반)",        file:"doc_fcm_guide" },
+
+  // ── PAPERS ──
+  // fluency
+  { id:"p_stutter_goals",   label:"말더듬 치료목표", cat:"paper", age:"all",        r:9,  doi:"10.1016/j.jcomdis.2025.106582", year:2025, lang:["fluency","pragmatics","functional_communication"], task:["intervention","goal_writing"],     title:"Stuttering treatment goals beyond fluency: A non-Western perspective." },
+  { id:"p_psychosomatic",   label:"말더듬 심리신체", cat:"paper", age:"adult",       r:9,  doi:"10.52522/ijngp.v4i2.1",         year:2024, lang:["fluency","motor_speech"],                          task:["intervention"],                    title:"Navigating Stuttering Through A Psycho-Somatic Intervention." },
+  { id:"p_eeg_stutter",     label:"EEG 말더듬",     cat:"paper", age:"all",         r:9,  doi:"10.1016/j.jfludis.2025.106163", year:2025, lang:["fluency","motor_speech"],                          task:["assessment","intervention"],       title:"EEG responses to auditory cues during speech preparation predict stuttering severity." },
+  { id:"p_ai_stutter",      label:"AI 말더듬 타당도", cat:"paper", age:"all",        r:9,  doi:"10.1016/j.jfludis.2025.106186", year:2025, lang:["fluency","clinical_documentation"],               task:["assessment","intervention"],       title:"Content validity of AI-generated stuttering assessment and intervention programs." },
+  // phonology / motor_speech / PCC
+  { id:"p_ddk_ssd",         label:"DDK+SSD",         cat:"paper", age:"all",         r:9,  doi:"10.1111/1460-6984.12908",       year:2023, lang:["motor_speech","phonology"],                       task:["assessment"],   metric:["pcc"],    title:"Oral diadochokinetic production in children with SSD." },
+  { id:"p_phonol_decoding",  label:"음운해독 SSD",    cat:"paper", age:"school_age",  r:9,  doi:"10.1016/j.jcomdis.2026.106639",year:2026, lang:["phonology","motor_speech","cognitive_communication"],task:["assessment"],                   title:"Phonological processing and decoding abilities in children with SSD and dyslexia." },
+  { id:"p_ics_korean",       label:"ICS 한국어",      cat:"paper", age:"preschool",   r:9,  doi:"10.1080/17549507.2018.1485740", year:2019, lang:["phonology","functional_communication"],           task:["assessment"],   metric:["pcc"],    title:"Validation of the Intelligibility in Context Scale for Korean-speaking pre-school children." },
+  { id:"p_phonol_meta",      label:"음운중재 메타",   cat:"paper", age:"all",          r:9,  doi:"10.1111/1460-6984.13110",       year:2024, lang:["phonology","expressive_language","motor_speech"],  task:["intervention"], metric:["pcc"],   title:"Intervention studies targeting expressive phonology for children: meta-analysis." },
+  { id:"p_speech_proc",      label:"한국어 음운처리",  cat:"paper", age:"school_age",  r:9,  doi:"10.1159/000550857",             year:2026, lang:["phonology","receptive_language"],                  task:["assessment"],   metric:["pcc"],   title:"Korean L1-English L2 Speech Processing Task for children with/without SSD." },
+  // MLU / morphosyntax
+  { id:"p_mlu_korean",       label:"MLU/LLU 2-5세",  cat:"paper", age:"preschool",   r:9,  doi:"10.12963/csd.250168",           year:2025, lang:["expressive_language","morphosyntax"],              task:["assessment"],   metric:["mlu_morpheme","mlu_word","llu_morpheme"], title:"Developmental Patterns of MLU and LLU in Korean Children 2-5 Years." },
+  { id:"p_sentence_cbm",     label:"문장 CBM+LSA",   cat:"paper", age:"school_age",   r:9,  doi:"10.1177/00222194251361902",     year:2025, lang:["expressive_language","morphosyntax","vocabulary"], task:["assessment"],   metric:["mlu_morpheme","ndw"],                    title:"Technical Features of Sentence-Level CBM and Language Sample Analysis." },
+  { id:"p_student_lsa",      label:"학생 LSA 정확도", cat:"paper", age:"preschool",   r:9,  doi:"10.1044/2023_persp-23-00033",   year:2023, lang:["expressive_language","vocabulary"],                task:["assessment","clinical_documentation"], metric:["mlu_morpheme","mlu_word","ndw","ntw","ttr"], title:"Accuracy of Undergraduate Students' Language Sample Analysis." },
+  { id:"p_dld_grammar",      label:"DLD 문법중재",    cat:"paper", age:"school_age",  r:9,  doi:"10.1080/17549507.2024.2442561", year:2025, lang:["morphosyntax","expressive_language"],              task:["intervention"],                    title:"Grammar intervention priorities for children with DLD: Tasmanian SLPs." },
+  // CIU / adult discourse / aphasia
+  { id:"p_llm_ciu",          label:"LLM+CIU 실어증",  cat:"paper", age:"adult",       r:9,  doi:"10.31234/osf.io/py9xt_v1",     year:2026, lang:["narrative_discourse","clinical_documentation"],    task:["assessment"],   metric:["ciu_ratio"],                             title:"Do LLMs Reliably Identify Correct Information Units in Aphasic Discourse?" },
+  { id:"p_vnest",            label:"VNeST 원격",      cat:"paper", age:"adult",        r:9,  doi:"10.12963/csd.22911",            year:2022, lang:["expressive_language","vocabulary","narrative_discourse"], task:["intervention","assessment"], metric:["ciu_ratio"], title:"Effects of VNeST using Telepractice on Word Retrieval in Korean Aphasia." },
+  { id:"p_typed_discourse",  label:"실어증 담화양식",  cat:"paper", age:"adult",       r:9,  doi:"10.1044/2023_ajslp-22-00322",   year:2023, lang:["expressive_language","narrative_discourse"],       task:["assessment"],   metric:["ciu_count","ciu_ratio","ntw"],            title:"Handwritten and Typed Discourse in People With Aphasia." },
+  { id:"p_main_concept",     label:"그림설명 한영",    cat:"paper", age:"adult",        r:9,  doi:"10.1044/2026_ajslp-25-00422",   year:2026, lang:["expressive_language","narrative_discourse","pragmatics"], task:["assessment"],                          title:"Cross-Linguistic Picture Description: Main Concept Analysis (Korean/English Aphasia)." },
+  { id:"p_micap",            label:"mICAP 실어증 RCT", cat:"paper", age:"adult",       r:9,  doi:"10.1080/02687038.2024.2424493", year:2024, lang:["expressive_language","functional_communication"], task:["assessment","intervention"], metric:["ciu_count"], title:"Modified intensive comprehensive aphasia program (mICAP) RCT." },
+  { id:"p_noun_verb_sfa",    label:"명사/동사 SFA",    cat:"paper", age:"adult",       r:9,  doi:"10.1044/2025_ajslp-24-00397",   year:2026, lang:["expressive_language","vocabulary"],                task:["intervention"],                    title:"Noun- and Verb-Semantic Feature Analysis in Korean-Speaking Aphasia." },
+  // stroke / neurological
+  { id:"p_stroke_func",      label:"뇌졸중 기능평가",  cat:"paper", age:"adult",       r:9,  doi:"10.1001/jamanetworkopen.2022.33094",year:2022,lang:["expressive_language","receptive_language","cognitive_communication"], task:["assessment"], title:"Multifaceted Assessment of Functional Outcomes in First-time Stroke." },
+  { id:"p_casp",             label:"CASP 인지척도",    cat:"paper", age:"adult",       r:9,  doi:"10.1016/j.rehab.2021.101594",   year:2022, lang:["cognitive_communication","clinical_documentation"],task:["assessment"],                   title:"Cognitive Assessment Scale for Stroke Patients (CASP): validation." },
+  { id:"p_return_work",      label:"뇌졸중 복직",      cat:"paper", age:"adult",       r:9,  doi:"10.1136/bmjopen-2018-028673",   year:2019, lang:["cognitive_communication","functional_communication"],task:["assessment"],                  title:"Factors influencing return to work after stroke (KOSCO Study)." },
+  { id:"p_bilateral",        label:"편측 뇌졸중",      cat:"paper", age:"adult",       r:9,  doi:"10.1097/wnr.0000000000000929",  year:2018, lang:["expressive_language","receptive_language"],        task:["assessment"],                   title:"Bilateral hemispheric changes and language outcomes in chronic left hemisphere stroke." },
+  { id:"p_wab_korean",       label:"한국어 WAB 규준",  cat:"paper", age:"all",         r:9,  doi:"10.1080/13803390490515397",     year:2004, lang:["expressive_language","receptive_language","clinical_documentation"], task:["assessment"], title:"Normative data on the Korean version of the Western Aphasia Battery." },
+  // ASD
+  { id:"p_avata_asd",        label:"AVATA ASD",        cat:"paper", age:"school_age",  r:9,  doi:"10.30773/pi.2025.0354",         year:2026, lang:["pragmatics","functional_communication"],           task:["intervention"],                    title:"AVATA Cure Digital Therapeutics for Social Communication in Children With ASD." },
+  { id:"p_ei_asd",           label:"ASD 조기중재",     cat:"paper", age:"preschool",   r:9,  doi:"10.22251/jlcci.2024.24.1.183",  year:2024, lang:["expressive_language","receptive_language"],        task:["assessment","intervention"],       title:"Effect of Integrative Early Intervention Therapy on Language Development in ASD." },
+  { id:"p_asd_corpus",       label:"한국 ASD 코퍼스",  cat:"paper", age:"school_age",  r:9,  doi:"10.48550/arxiv.2402.15539",     year:2024, lang:["phonology","expressive_language","pragmatics"],   task:["assessment"],                   title:"Speech Corpus for Korean Children with ASD: Towards Automatic Assessment." },
+  { id:"p_asd_receptive",    label:"ASD vs DLD 수용",  cat:"paper", age:"preschool",   r:9,  doi:"10.3349/ymj.2014.55.6.1721",   year:2014, lang:["expressive_language","receptive_language"],        task:["assessment"],                   title:"Receptive-expressive language profiles: ASD vs developmental language delay." },
+  // DLD / school-age
+  { id:"p_dcd_dld",          label:"DCD+DLD 리뷰",     cat:"paper", age:"school_age",  r:9,  doi:"10.1016/j.ridd.2025.104994",   year:2025, lang:["expressive_language","receptive_language","phonology"], task:["assessment"],                  title:"Language and motor skills in children with DCD and DLD: systematic review." },
+  { id:"p_dld_risk",         label:"DLD 언어위험",     cat:"paper", age:"school_age",  r:9,  doi:"10.18192/olbij.v14i1.6938",    year:2025, lang:["expressive_language","pragmatics"],                task:["intervention"],                    title:"Linguistic risk-taking in inclusive contexts: The case of DLD." },
+  { id:"p_gin_test",         label:"GIN Test SSD",     cat:"paper", age:"school_age",  r:8,  doi:"10.7874/jao.2019.00381",       year:2020, lang:["motor_speech","cognitive_communication"],           task:["assessment"],                   title:"Gaps-In-Noise Test Performance in Children with Speech Sound Disorder." },
+  { id:"p_early_literacy",   label:"조기 리터러시",    cat:"paper", age:"preschool",   r:9,  doi:"10.1111/1460-6984.70227",       year:2026, lang:["expressive_language","receptive_language","phonology","narrative_discourse"], task:["assessment"], title:"Accuracy and Efficiency of the Speech Language Early Literacy Screening Checklist." },
+  // vocabulary / bilingual
+  { id:"p_bilingual_book",   label:"이중언어 그림책",  cat:"paper", age:"preschool",   r:9,  doi:"10.12963/csd.23999",            year:2024, lang:["expressive_language","receptive_language","vocabulary"], task:["intervention","assessment"],   title:"Effect of Online Bilingual Shared Book Reading on Vocabulary Learning." },
+  // LSA practice / clinical doc
+  { id:"p_slp_lsa_attitude", label:"SLP LSA 태도",     cat:"paper", age:"all",         r:9,  doi:"10.12963/csd.20731",            year:2020, lang:["clinical_documentation"],                          task:["assessment","report_generation"], title:"Attitude of Korean SLPs toward Usage of Language Sample Analysis and Computer-aided LSA." },
+  // Korean PDFs
+  { id:"p_asd_subjectivity", label:"ASD SLP 주관성",   cat:"paper", age:"pdf",         r:10, doi:null, year:null, lang:["pragmatics","clinical_documentation"],              task:["assessment"],       title:"언어재활사의 ASD 아동 언어치료 주관성 연구 (질적연구)" },
+  { id:"p_lsa_qual",         label:"언어표본분석 경험", cat:"paper", age:"pdf",         r:10, doi:null, year:null, lang:["clinical_documentation"],                          task:["assessment"],       title:"언어표본분석 경험 및 요구 질적 연구" },
+  { id:"p_utterance",        label:"발화분석과제",      cat:"paper", age:"pdf",         r:10, doi:null, year:null, lang:["expressive_language","morphosyntax"],               task:["assessment"],       title:"발화분석과제 (발화 계산 실습 자료)" },
+];
+
+const LINKS_RAG = [
+  // 지표 내부
+  { s:"r_exception",    t:"r_mlu",            label:"제외 기준 적용" },
+  { s:"r_exception",    t:"r_pcc",            label:"제외 기준 적용" },
+  { s:"r_exception",    t:"r_ciu",            label:"제외 기준 적용" },
+  { s:"r_exception",    t:"r_llu",            label:"제외 기준 적용" },
+  { s:"r_exception",    t:"r_disfluency_rule",label:"제외 기준 적용" },
+  { s:"r_lsa_metrics",  t:"r_mlu",            label:"지표 포함" },
+  { s:"r_lsa_metrics",  t:"r_pcc",            label:"지표 포함" },
+  { s:"r_lsa_metrics",  t:"r_ciu",            label:"지표 포함" },
+  { s:"r_lsa_metrics",  t:"r_llu",            label:"지표 포함" },
+  { s:"r_lsa_metrics",  t:"r_disfluency_rule",label:"지표 포함" },
+  { s:"r_fluency",      t:"r_disfluency_rule",label:"비유창성 계산 연계" },
+  { s:"r_morphosyntax", t:"r_mlu",            label:"형태소 분석 기반" },
+  { s:"r_lsa_metrics",  t:"r_morphosyntax",   label:"형태통사 연계" },
+  // 성인 내부
+  { s:"r_adult_slp",    t:"r_adult_discourse",label:"담화 평가" },
+  { s:"r_adult_slp",    t:"r_dysarthria",     label:"말운동 장애" },
+  { s:"r_adult_slp",    t:"r_tbi",            label:"TBI" },
+  { s:"r_adult_slp",    t:"r_dementia",       label:"치매" },
+  { s:"r_adult_slp",    t:"r_voice",          label:"음성" },
+  { s:"r_adult_discourse", t:"r_ciu",         label:"CIU 사용" },
+  { s:"r_aac_adult",    t:"r_adult_slp",      label:"성인 AAC" },
+  // 아동 내부
+  { s:"r_child_pop",    t:"r_asd",            label:"ASD 대상" },
+  { s:"r_child_pop",    t:"r_dld",            label:"DLD 대상" },
+  { s:"r_child_pop",    t:"r_receptive",      label:"수용언어 대상" },
+  { s:"r_child_pop",    t:"r_school_age",     label:"학령기 대상" },
+  { s:"r_child_pop",    t:"r_milieu",         label:"환경중심" },
+  { s:"r_child_pop",    t:"r_child_tools",    label:"표준검사" },
+  { s:"r_child_pop",    t:"r_lsa_metrics",    label:"언어표본분석" },
+  { s:"r_school_age",   t:"r_narrative",      label:"내러티브 중재" },
+  { s:"r_aac_child",    t:"r_child_pop",      label:"아동 AAC" },
+  // 공통
+  { s:"r_fluency",      t:"r_adult_slp",      label:"성인 유창성" },
+  { s:"r_fluency",      t:"r_child_pop",      label:"아동 유창성" },
+  { s:"r_goal",         t:"r_adult_slp",      label:"성인 목표" },
+  { s:"r_goal",         t:"r_child_pop",      label:"아동 목표" },
+  { s:"r_safety",       t:"r_goal",           label:"안전 작성 원칙" },
+  { s:"r_fcm",          t:"r_adult_slp",      label:"기능 기록" },
+  { s:"r_fcm",          t:"r_goal",           label:"기능 목표" },
+];
+
+const LINKS_CROSS = [
+  // fluency ↔ 논문
+  { s:"r_fluency",      t:"p_stutter_goals",  label:"말더듬 목표" },
+  { s:"r_fluency",      t:"p_psychosomatic",  label:"유창성 중재" },
+  { s:"r_fluency",      t:"p_eeg_stutter",    label:"유창성 평가" },
+  { s:"r_fluency",      t:"p_ai_stutter",     label:"AI 타당도" },
+  // PCC ↔ 음운
+  { s:"r_pcc",          t:"p_ddk_ssd",        label:"PCC 측정" },
+  { s:"r_pcc",          t:"p_ics_korean",     label:"PCC 측정" },
+  { s:"r_pcc",          t:"p_phonol_meta",    label:"PCC 중재" },
+  { s:"r_pcc",          t:"p_speech_proc",    label:"PCC 측정" },
+  { s:"r_dysarthria",   t:"p_ddk_ssd",        label:"말운동" },
+  { s:"r_dysarthria",   t:"p_gin_test",       label:"말운동+인지" },
+  // MLU / LLU ↔ 논문
+  { s:"r_mlu",          t:"p_mlu_korean",     label:"MLU 규준" },
+  { s:"r_mlu",          t:"p_sentence_cbm",   label:"MLU 적용" },
+  { s:"r_mlu",          t:"p_student_lsa",    label:"MLU 훈련" },
+  { s:"r_morphosyntax", t:"p_mlu_korean",     label:"형태소 기반" },
+  { s:"r_llu",          t:"p_mlu_korean",     label:"LLU 규준" },
+  // 비유창성 계산 ↔ 논문
+  { s:"r_disfluency_rule", t:"p_stutter_goals", label:"비유창성 목표" },
+  { s:"r_disfluency_rule", t:"p_eeg_stutter",   label:"비유창성 측정" },
+  { s:"r_disfluency_rule", t:"p_ai_stutter",    label:"AI 비유창성" },
+  { s:"r_morphosyntax", t:"p_dld_grammar",    label:"형태통사 중재" },
+  // CIU ↔ 실어증 담화
+  { s:"r_ciu",          t:"p_llm_ciu",        label:"CIU 자동화" },
+  { s:"r_ciu",          t:"p_vnest",          label:"CIU 치료결과" },
+  { s:"r_ciu",          t:"p_typed_discourse",label:"CIU 규준" },
+  { s:"r_ciu",          t:"p_micap",          label:"CIU 결과측정" },
+  { s:"r_adult_discourse", t:"p_llm_ciu",     label:"담화 자동분석" },
+  { s:"r_adult_discourse", t:"p_typed_discourse", label:"담화 양식" },
+  { s:"r_adult_discourse", t:"p_main_concept",label:"담화 평가" },
+  // ASD ↔ 논문
+  { s:"r_asd",          t:"p_avata_asd",      label:"ASD 화용 중재" },
+  { s:"r_asd",          t:"p_ei_asd",         label:"ASD 조기중재" },
+  { s:"r_asd",          t:"p_asd_corpus",     label:"ASD 음성" },
+  { s:"r_asd",          t:"p_asd_subjectivity",label:"ASD 임상 질적연구" },
+  // DLD ↔ 논문
+  { s:"r_dld",          t:"p_dld_grammar",    label:"DLD 문법" },
+  { s:"r_dld",          t:"p_dcd_dld",        label:"DLD 감별" },
+  { s:"r_dld",          t:"p_dld_risk",       label:"DLD 참여" },
+  { s:"r_dld",          t:"p_asd_receptive",  label:"ASD vs DLD" },
+  // 수용언어 ↔ 논문
+  { s:"r_receptive",    t:"p_asd_receptive",  label:"수용언어 감별" },
+  { s:"r_receptive",    t:"p_dcd_dld",        label:"수용언어 장애" },
+  { s:"r_receptive",    t:"p_bilingual_book", label:"이중언어 어휘" },
+  // 학령기 ↔ 논문
+  { s:"r_school_age",   t:"p_dld_grammar",    label:"학령기 문법" },
+  { s:"r_school_age",   t:"p_sentence_cbm",   label:"학령기 LSA" },
+  { s:"r_school_age",   t:"p_early_literacy", label:"학령기 리터러시" },
+  { s:"r_school_age",   t:"p_dcd_dld",        label:"학령기 DLD" },
+  { s:"r_school_age",   t:"p_dld_risk",       label:"학령기 참여" },
+  { s:"r_narrative",    t:"p_main_concept",   label:"내러티브 평가" },
+  // 성인 SLP ↔ 뇌졸중/실어증
+  { s:"r_adult_slp",    t:"p_stroke_func",    label:"뇌졸중 기능" },
+  { s:"r_adult_slp",    t:"p_return_work",    label:"뇌졸중 복직" },
+  { s:"r_adult_slp",    t:"p_bilateral",      label:"편측 뇌졸중" },
+  { s:"r_adult_slp",    t:"p_wab_korean",     label:"WAB 규준" },
+  { s:"r_adult_slp",    t:"p_noun_verb_sfa",  label:"실어증 어휘치료" },
+  { s:"r_adult_slp",    t:"p_micap",          label:"실어증 집중치료" },
+  { s:"r_adult_slp",    t:"p_vnest",          label:"VNeST 원격" },
+  { s:"r_tbi",          t:"p_casp",           label:"인지 평가" },
+  { s:"r_tbi",          t:"p_stroke_func",    label:"신경인지" },
+  { s:"r_dementia",     t:"p_return_work",    label:"인지-기능 복귀" },
+  // LSA 실천 / 임상 문서화
+  { s:"r_lsa_metrics",  t:"p_slp_lsa_attitude",label:"LSA 실태" },
+  { s:"r_lsa_metrics",  t:"p_student_lsa",    label:"LSA 교육" },
+  { s:"r_lsa_metrics",  t:"p_lsa_qual",       label:"LSA 경험 질적연구" },
+  { s:"r_lsa_metrics",  t:"p_utterance",      label:"발화분석 실습" },
+  { s:"r_exception",    t:"p_utterance",      label:"제외 기준 실습" },
+  { s:"r_safety",       t:"p_slp_lsa_attitude",label:"임상 기록 태도" },
+  { s:"r_goal",         t:"p_stutter_goals",  label:"목표 작성 예시" },
+  // AAC ↔ 논문
+  { s:"r_aac_child",    t:"p_avata_asd",      label:"AAC+디지털" },
+  { s:"r_milieu",       t:"p_ei_asd",         label:"환경중심 중재" },
+  { s:"r_milieu",       t:"p_bilingual_book", label:"언어 노출" },
+  { s:"r_child_tools",  t:"p_early_literacy", label:"아동 선별" },
+  { s:"r_child_tools",  t:"p_slp_lsa_attitude",label:"검사 도구 태도" },
+];
+
+const LINKS_PAPER = [
+  // PCC 공유
+  { s:"p_ddk_ssd",      t:"p_ics_korean",     label:"PCC" },
+  { s:"p_ddk_ssd",      t:"p_phonol_meta",    label:"PCC" },
+  { s:"p_ics_korean",   t:"p_speech_proc",    label:"PCC" },
+  // MLU 공유
+  { s:"p_mlu_korean",   t:"p_sentence_cbm",   label:"MLU" },
+  { s:"p_mlu_korean",   t:"p_student_lsa",    label:"MLU" },
+  { s:"p_sentence_cbm", t:"p_student_lsa",    label:"MLU" },
+  // CIU 공유
+  { s:"p_llm_ciu",      t:"p_typed_discourse",label:"CIU" },
+  { s:"p_llm_ciu",      t:"p_vnest",          label:"CIU" },
+  { s:"p_typed_discourse", t:"p_micap",       label:"CIU" },
+  // 유창성 클러스터
+  { s:"p_stutter_goals",t:"p_ai_stutter",     label:"말더듬" },
+  { s:"p_eeg_stutter",  t:"p_ai_stutter",     label:"말더듬" },
+  // ASD 클러스터
+  { s:"p_avata_asd",    t:"p_ei_asd",         label:"ASD 중재" },
+  { s:"p_asd_corpus",   t:"p_asd_subjectivity",label:"ASD 연구" },
+  { s:"p_asd_receptive",t:"p_ei_asd",         label:"ASD 언어" },
+  // DLD 클러스터
+  { s:"p_dld_grammar",  t:"p_dcd_dld",        label:"DLD" },
+  { s:"p_dld_grammar",  t:"p_dld_risk",       label:"DLD" },
+  // 뇌졸중 클러스터
+  { s:"p_stroke_func",  t:"p_casp",           label:"뇌졸중 평가" },
+  { s:"p_stroke_func",  t:"p_bilateral",      label:"뇌졸중" },
+  { s:"p_return_work",  t:"p_bilateral",      label:"뇌졸중 회복" },
+  // LSA 클러스터
+  { s:"p_slp_lsa_attitude", t:"p_lsa_qual",   label:"LSA 실태" },
+  { s:"p_utterance",    t:"p_lsa_qual",       label:"발화분석" },
+];
+
+// ──────────────────────────────────────────────
+// SETUP
+// ──────────────────────────────────────────────
+const svg = d3.select("#graph");
+const W = window.innerWidth, H = window.innerHeight;
+svg.attr("width", W).attr("height", H);
+const g = svg.append("g");
+
+svg.call(d3.zoom().scaleExtent([0.15,5]).on("zoom", e => g.attr("transform", e.transform)))
+   .on("dblclick.zoom", null);
+
+// markers
+const defs = svg.append("defs");
+[["rag","#45475a"],["cross","#313244"],["paper","#1e2030"]].forEach(([k,c]) => {
+  defs.append("marker").attr("id","arr-"+k)
+    .attr("viewBox","0 -5 10 10").attr("refX",16).attr("refY",0)
+    .attr("markerWidth",5).attr("markerHeight",5).attr("orient","auto")
+    .append("path").attr("d","M0,-5L10,0L0,5").attr("fill",c).attr("opacity",0.6);
+});
+
+// ──────────────────────────────────────────────
+// LINK RENDERING
+// ──────────────────────────────────────────────
+function buildLinks() {
+  const ragOn   = document.getElementById("tog-rag").checked;
+  const crossOn = document.getElementById("tog-cross").checked;
+  const paperOn = document.getElementById("tog-paper").checked;
+
+  const all = [
+    ...(ragOn   ? LINKS_RAG.map(l=>({...l,kind:"rag"}))   : []),
+    ...(crossOn ? LINKS_CROSS.map(l=>({...l,kind:"cross"})): []),
+    ...(paperOn ? LINKS_PAPER.map(l=>({...l,kind:"paper"})): []),
+  ].map(l => ({ source:l.s, target:l.t, label:l.label, kind:l.kind }));
+  return all;
+}
+
+let linkData = buildLinks();
+
+const linkGroup = g.append("g").attr("class","links");
+const nodeGroup = g.append("g").attr("class","nodes");
+
+function getNodeColor(d) {
+  if (d.cat === "rag")   return RAG_CAT[d.ragCat];
+  if (d.cat === "paper") return PAPER_AGE[d.age];
+  return "#888";
+}
+
+function shortLabel(d) {
+  return d.label;
+}
+
+// ──────────────────────────────────────────────
+// SIMULATION
+// ──────────────────────────────────────────────
+let sim;
+function buildSim(links) {
+  if (sim) sim.stop();
+  sim = d3.forceSimulation(NODES)
+    .force("link", d3.forceLink(links).id(d=>d.id)
+      .distance(d => d.kind === "rag" ? 100 : d.kind === "cross" ? 140 : 80)
+      .strength(d => d.kind === "rag" ? 0.5 : d.kind === "cross" ? 0.25 : 0.3))
+    .force("charge", d3.forceManyBody().strength(d => d.cat==="rag" ? -350 : -180))
+    .force("center", d3.forceCenter(W/2, H/2))
+    .force("collision", d3.forceCollide(d => d.r + (d.cat==="rag"?14:8)));
+  return sim;
+}
+
+function render(links) {
+  // links
+  linkGroup.selectAll("line").remove();
+  const linkSel = linkGroup.selectAll("line")
+    .data(links).join("line")
+    .attr("class", d => `link link-${d.kind}`)
+    .attr("marker-end", d => `url(#arr-${d.kind})`);
+
+  // nodes
+  nodeGroup.selectAll("g").remove();
+  const nodeSel = nodeGroup.selectAll("g")
+    .data(NODES).join("g")
+    .attr("class", d => `node ${d.cat==="rag"?"rag-node":"paper-node"}`)
+    .call(d3.drag()
+      .on("start",(e,d)=>{ if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
+      .on("drag", (e,d)=>{ d.fx=e.x; d.fy=e.y; })
+      .on("end",  (e,d)=>{ if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }));
+
+  nodeSel.append("circle")
+    .attr("r", d=>d.r)
+    .attr("fill", d => getNodeColor(d)+"22")
+    .attr("stroke", d => getNodeColor(d));
+
+  nodeSel.append("text")
+    .attr("dy", d => d.r+12)
+    .attr("text-anchor","middle")
+    .text(d => shortLabel(d));
+
+  // tooltip
+  const tooltip = document.getElementById("tooltip");
+  nodeSel.on("mouseover", function(e,d) {
+    const color = getNodeColor(d);
+    const badges = d.cat==="rag"
+      ? `<span class="tt-badge" style="background:${color}30;color:${color}">${d.ragCat}</span>`
+      : [
+          d.age && `<span class="tt-badge" style="background:#31324444;color:#a6adc8">${d.age}</span>`,
+          d.year && `<span class="tt-badge" style="background:#31324444;color:#6c7086">${d.year}</span>`,
+          ...(d.metric||[]).map(m=>`<span class="tt-badge" style="background:#89b4fa22;color:#89b4fa">${m}</span>`),
+          ...(d.task||[]).map(t=>`<span class="tt-badge" style="background:#a6e3a122;color:#a6e3a1">${t}</span>`),
+        ].filter(Boolean).join("");
+    tooltip.innerHTML = `
+      <div class="tt-title">${d.file||d.label}</div>
+      <div>${badges}</div>
+      <div class="tt-desc">${d.desc || d.title || ""}</div>
+      ${d.lang ? `<div class="tt-meta">영역: ${d.lang.join(", ")}</div>` : ""}
+      ${d.doi ? `<div class="tt-meta">DOI: ${d.doi}</div>` : ""}
+    `;
+    tooltip.classList.add("visible");
+  }).on("mousemove", function(e) {
+    const x = e.clientX+14, y = e.clientY-10;
+    const tw = tooltip.offsetWidth;
+    tooltip.style.left = (x+tw>window.innerWidth ? x-tw-28 : x)+"px";
+    tooltip.style.top  = Math.min(y, window.innerHeight-tooltip.offsetHeight-10)+"px";
+  }).on("mouseout", ()=>tooltip.classList.remove("visible"));
+
+  nodeSel.on("click", function(e,d) {
+    e.stopPropagation();
+    const neighborIds = new Set([d.id]);
+    const neighborLinks = new Set();
+    links.forEach((l,i) => {
+      const s = l.source.id||l.source, t = l.target.id||l.target;
+      if (s===d.id||t===d.id) { neighborIds.add(s); neighborIds.add(t); neighborLinks.add(i); }
+    });
+    nodeSel.classed("highlighted", n=>neighborIds.has(n.id))
+           .classed("dimmed", n=>!neighborIds.has(n.id));
+    linkSel.classed("highlighted",(_, i)=>neighborLinks.has(i))
+           .classed("dimmed",(_, i)=>!neighborLinks.has(i));
+  });
+
+  svg.on("click", ()=>{
+    nodeSel.classed("highlighted dimmed", false);
+    linkSel.classed("highlighted dimmed", false);
+  });
+
+  const s = buildSim(links);
+  s.on("tick", ()=>{
+    linkSel.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y)
+           .attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
+    nodeSel.attr("transform",d=>`translate(${d.x},${d.y})`);
+  });
+}
+
+render(linkData);
+
+// toggle handlers
+["tog-rag","tog-cross","tog-paper"].forEach(id => {
+  document.getElementById(id).addEventListener("change", ()=>{
+    linkData = buildLinks();
+    render(linkData);
+  });
+});
+
+window.addEventListener("resize", ()=>{
+  const W2=window.innerWidth, H2=window.innerHeight;
+  svg.attr("width",W2).attr("height",H2);
+  sim.force("center",d3.forceCenter(W2/2,H2/2)).alpha(0.3).restart();
+});
+</script>
+</body>
+</html>

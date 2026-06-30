@@ -42,3 +42,4 @@ class Utterance(BaseModel):
     morphemes: list[Morpheme] = []
     tokens: list[str] = []
     source: UtteranceSource | None = None
+    target_text: str | None = None   # SLP가 제시한 목표 발화 — PCC 계산에 필요
