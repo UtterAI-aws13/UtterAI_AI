@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import json
-import re
+from typing import Optional
 
 from loguru import logger
+from pydantic import BaseModel, Field
 from strands import Agent
 from strands.models import BedrockModel
 
@@ -15,21 +15,41 @@ from app.agents.report_editing_chatbot.tools import (
     _chat_ctx,
     read_report_section,
     retrieve_research_evidence,
-    validate_clinical_safety,
     save_revision_proposal,
     create_ontology_map_link,
 )
 
+# ── Response schema ──────────────────────────────────────────────────────────
+
+
+class IntentClassification(BaseModel):
+    intent: str = "general_question"
+    target_section: Optional[str] = None
+    requires_patch: bool = False
+
+
+class PatchProposal(BaseModel):
+    target_section: str
+    original_text: str
+    proposed_text: str
+    rationale: str
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class ChatResponse(BaseModel):
+    intent: IntentClassification = Field(default_factory=IntentClassification)
+    assistant_message: str = ""
+    patch_proposal: Optional[PatchProposal] = None
+
+
+# ── Agent ────────────────────────────────────────────────────────────────────
+
 _AGENT_TOOLS = [
     read_report_section,
     retrieve_research_evidence,
-    validate_clinical_safety,
     save_revision_proposal,
     create_ontology_map_link,
 ]
-
-_OFF_TOPIC_INTENT = {"intent": "off_topic", "target_section": None, "requires_patch": False}
-_OFF_TOPIC_MESSAGE = "이 챗봇은 SOAP 리포트 수정만 지원합니다. 섹션 수정, 근거 확인, 포맷 검토 등을 요청해주세요."
 
 
 def _build_initial_message(
@@ -57,55 +77,6 @@ def _build_initial_message(
     )
 
 
-def _parse_agent_output(text: str, stored_proposal: dict | None) -> dict:
-    """Extract structured response from agent text output."""
-    parsed: dict | str = text
-
-    # Try extracting JSON from markdown code block first
-    m = re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", text)
-    if m:
-        try:
-            parsed = json.loads(m.group(1))
-        except json.JSONDecodeError:
-            pass
-
-    # Fallback: bare JSON object in text
-    if isinstance(parsed, str):
-        m2 = re.search(r"\{[\s\S]*\}", text)
-        if m2:
-            try:
-                parsed = json.loads(m2.group())
-            except json.JSONDecodeError:
-                pass
-
-    if isinstance(parsed, str):
-        # Plain text response — no structured JSON found
-        intent = {"intent": "general_question", "target_section": None, "requires_patch": False}
-        assistant_message = parsed or "응답을 처리하는 중 오류가 발생했습니다. 다시 시도해주세요."
-        patch = stored_proposal
-    else:
-        intent_raw = parsed.get("intent")
-        intent = (
-            intent_raw
-            if isinstance(intent_raw, dict)
-            else {"intent": "general_question", "target_section": None, "requires_patch": False}
-        )
-        assistant_message = str(parsed.get("assistant_message", ""))
-        # Tool-stored proposal takes precedence; fall back to JSON patch_proposal field
-        json_patch = parsed.get("patch_proposal")
-        patch = stored_proposal or (json_patch if isinstance(json_patch, dict) else None)
-
-    # Hard safety: off_topic never carries a patch
-    if intent.get("intent") == "off_topic":
-        patch = None
-
-    return {
-        "intent": intent,
-        "assistant_message": assistant_message,
-        "patch_proposal": patch,
-    }
-
-
 def run_agent(
     report_id: str,
     report_version: int,
@@ -115,15 +86,7 @@ def run_agent(
 ) -> dict:
     logger.info(f"[report_chat_agent] report_id={report_id} version={report_version} msg_len={len(message)}")
 
-    ctx_value: dict = {
-        "report_id": report_id,
-        "report_version": report_version,
-        "segments": segments,
-        "history": history,
-        "proposal": None,
-    }
-    token = _chat_ctx.set(ctx_value)
-
+    token = _chat_ctx.set({"report_id": report_id, "segments": segments})
     try:
         model = BedrockModel(
             model_id=settings.bedrock_report_model_id,
@@ -138,18 +101,25 @@ def run_agent(
             system_prompt=REPORT_EDITING_SYSTEM_PROMPT,
         )
 
-        initial_message = _build_initial_message(message, segments, history)
-        result = agent(initial_message)
-        response_text = str(result)
-
-        stored_proposal = ctx_value.get("proposal")
-        parsed = _parse_agent_output(response_text, stored_proposal)
-
-        logger.info(
-            f"[report_chat_agent] intent={parsed['intent'].get('intent')} "
-            f"has_patch={parsed['patch_proposal'] is not None}"
+        result = agent(
+            _build_initial_message(message, segments, history),
+            structured_output_model=ChatResponse,
         )
-        return parsed
+
+        output: ChatResponse = result.structured_output or ChatResponse(
+            assistant_message=str(result)
+        )
+
+        # off_topic은 서버 레벨에서 patch를 강제 제거
+        if output.intent.intent == "off_topic":
+            output.patch_proposal = None
+
+        response = output.model_dump()
+        logger.info(
+            f"[report_chat_agent] intent={output.intent.intent} "
+            f"has_patch={output.patch_proposal is not None}"
+        )
+        return response
 
     finally:
         _chat_ctx.reset(token)
