@@ -13,7 +13,7 @@ def get_agentcore_client():
     global _client
     if _client is None:
         logger.info(f"[agentcore] client 초기화 region={settings.bedrock_region}")
-        _client = boto3.client("bedrock-agentcore-runtime", region_name=settings.bedrock_region)
+        _client = boto3.client("bedrock-agent-runtime", region_name=settings.bedrock_region)
     return _client
 
 
