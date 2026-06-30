@@ -13,7 +13,7 @@ def get_agentcore_client():
     global _client
     if _client is None:
         logger.info(f"[agentcore] client 초기화 region={settings.bedrock_region}")
-        _client = boto3.client("bedrock-agentcore-runtime", region_name=settings.bedrock_region)
+        _client = boto3.client("bedrock-agentcore", region_name=settings.bedrock_region)
     return _client
 
 
@@ -33,23 +33,20 @@ def invoke_agent(
 
     logger.info(f"[agentcore] invoke_agent 시작 session_id={session_id} agent_id={agent_id}")
 
-    response = client.invoke_agent(
-        agentId=agent_id,
-        agentAliasId=alias_id,
-        sessionId=session_id,
-        inputText=prompt,
-        sessionState={
-            "sessionAttributes": {
-                "max_tokens": str(max_tokens),
-            }
-        },
-    )
+    invoke_kwargs: dict = {
+        "agentRuntimeArn": agent_id,
+        "runtimeSessionId": session_id,
+        "payload": json.dumps({"inputText": prompt}).encode("utf-8"),
+        "contentType": "application/json",
+        "accept": "application/json",
+    }
+    if alias_id:
+        invoke_kwargs["qualifier"] = alias_id
 
-    full_text = ""
-    for event in response.get("completion", []):
-        if "chunk" in event:
-            chunk_text = event["chunk"]["bytes"].decode("utf-8")
-            full_text += chunk_text
+    response = client.invoke_agent_runtime(**invoke_kwargs)
+
+    raw = response["response"].read()
+    full_text = raw.decode("utf-8") if raw else ""
 
     logger.info(f"[agentcore] 응답 수신 완료 text_len={len(full_text)}")
     return _parse_json(full_text)
