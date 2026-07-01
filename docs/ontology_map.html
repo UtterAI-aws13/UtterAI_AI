@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>UtterAI Docs — Graph View</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0f1117;
+    color: #cdd6f4;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    overflow: hidden;
+    height: 100vh;
+  }
+
+  #graph { width: 100vw; height: 100vh; }
+
+  /* ── Links ── */
+  .link {
+    stroke: #313244;
+    stroke-width: 1.5;
+    transition: stroke 0.2s;
+  }
+  .link.highlighted { stroke: #89b4fa; stroke-width: 2.5; }
+
+  /* ── Nodes ── */
+  .node circle {
+    cursor: pointer;
+    stroke-width: 2;
+    transition: r 0.2s, stroke 0.2s, filter 0.2s;
+  }
+  .node circle:hover {
+    filter: drop-shadow(0 0 8px currentColor);
+  }
+  .node.highlighted circle {
+    stroke: #fff;
+    filter: drop-shadow(0 0 10px #cdd6f4);
+  }
+  .node.dimmed circle { opacity: 0.2; }
+  .node.dimmed text { opacity: 0.15; }
+
+  .node text {
+    font-size: 11px;
+    fill: #cdd6f4;
+    pointer-events: none;
+    text-shadow: 0 1px 4px #0f1117, 0 0 8px #0f1117;
+  }
+
+  /* ── Tooltip ── */
+  #tooltip {
+    position: fixed;
+    background: #1e1e2e;
+    border: 1px solid #313244;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    max-width: 300px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    z-index: 10;
+    line-height: 1.6;
+  }
+  #tooltip.visible { opacity: 1; }
+  #tooltip .tt-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: #89b4fa;
+    margin-bottom: 4px;
+  }
+  #tooltip .tt-tag {
+    display: inline-block;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-right: 4px;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  #tooltip .tt-desc { color: #a6adc8; font-size: 11px; }
+  #tooltip .tt-links { margin-top: 6px; color: #6c7086; font-size: 10px; }
+  #tooltip .tt-links span { color: #89dceb; }
+
+  /* ── Legend ── */
+  #legend {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    background: rgba(30,30,46,0.85);
+    border: 1px solid #313244;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 11px;
+    backdrop-filter: blur(8px);
+  }
+  #legend h3 { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: #6c7086; margin-bottom: 8px; }
+  .legend-row { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .legend-label { color: #a6adc8; }
+
+  /* ── Hint ── */
+  #hint {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    color: #45475a;
+    font-size: 10px;
+    text-align: right;
+    line-height: 1.8;
+  }
+
+  /* ── Edge label ── */
+  .edge-label {
+    font-size: 9px;
+    fill: #45475a;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+<svg id="graph"></svg>
+
+<div id="tooltip"></div>
+
+<div id="legend">
+  <h3>카테고리</h3>
+  <div class="legend-row"><div class="legend-dot" style="background:#89b4fa"></div><div class="legend-label">RAG 개요</div></div>
+  <div class="legend-row"><div class="legend-dot" style="background:#a6e3a1"></div><div class="legend-label">구현 / 인프라</div></div>
+  <div class="legend-row"><div class="legend-dot" style="background:#fab387"></div><div class="legend-label">지식베이스 문서</div></div>
+  <div class="legend-row"><div class="legend-dot" style="background:#f38ba8"></div><div class="legend-label">평가</div></div>
+  <div class="legend-row"><div class="legend-dot" style="background:#cba6f7"></div><div class="legend-label">변경 기록</div></div>
+</div>
+
+<div id="hint">
+  스크롤: 줌 &nbsp;|&nbsp; 드래그: 이동 &nbsp;|&nbsp; 노드 클릭: 연결 강조<br>
+  배경 클릭: 초기화
+</div>
+
+<script>
+const NODES = [
+  {
+    id: "RAG_GUIDE",
+    label: "RAG_GUIDE",
+    file: "RAG_GUIDE.md",
+    category: "overview",
+    desc: "RAG 전체 개요. 처음 이 코드베이스를 접하는 사람을 위한 문서. 세션 지표 → RAG 검색 → SOAP Note 생성 흐름 설명.",
+    r: 22
+  },
+  {
+    id: "RAG_IMPLEMENTATION",
+    label: "RAG_IMPLEMENTATION",
+    file: "RAG_IMPLEMENTATION.md",
+    category: "implementation",
+    desc: "RAG 구현 상세. Indexing / Query 두 단계, chunker·vector_store·rag_graph 등 파일 구조 설명.",
+    r: 18
+  },
+  {
+    id: "DATABASE_SETUP",
+    label: "DATABASE_SETUP",
+    file: "DATABASE_SETUP.md",
+    category: "implementation",
+    desc: "AI DB (pgvector) + BE RDS 연결 설정. SQLAlchemy 엔진, 테이블 생성 절차.",
+    r: 14
+  },
+  {
+    id: "MODEL_LOADING_GUIDE",
+    label: "MODEL_LOADING_GUIDE",
+    file: "MODEL_LOADING_GUIDE.md",
+    category: "implementation",
+    desc: "KURE-v1 임베딩 모델 로딩 가이드. HuggingFace 자동 다운로드·캐시 설명.",
+    r: 13
+  },
+  {
+    id: "RAG_KNOWLEDGE_BASE_DESIGN",
+    label: "RAG_KNOWLEDGE_BASE_DESIGN",
+    file: "RAG_KNOWLEDGE_BASE_DESIGN.md",
+    category: "knowledgebase",
+    desc: "지식베이스 설계. 보유 문서 목록, ontology 커버리지, language_area 확장 계획.",
+    r: 20
+  },
+  {
+    id: "RAG_SETUP_CHANGELOG",
+    label: "RAG_SETUP_CHANGELOG",
+    file: "RAG_SETUP_CHANGELOG.md",
+    category: "changelog",
+    desc: "RAG 세팅 1단계 코드 변경 기록. DOC_METADATA 추가, ontology 확장, chunker 개선.",
+    r: 15
+  },
+  {
+    id: "RAG_P0_DOCUMENTS",
+    label: "RAG_P0_DOCUMENTS",
+    file: "RAG_P0_DOCUMENTS.md",
+    category: "knowledgebase",
+    desc: "P0 우선순위 규칙 문서 5개. 발화 계산 공통 제외 기준, MLU/PCC/CIU 한국어 규칙, 임상 리포트 단정 표현 금지.",
+    r: 16
+  },
+  {
+    id: "RAG_P1_DOCUMENTS",
+    label: "RAG_P1_DOCUMENTS",
+    file: "RAG_P1_DOCUMENTS.md",
+    category: "knowledgebase",
+    desc: "P1 임상 가이드 4개. 유창성 장애, 학령기 언어장애, 수용언어, 임상 목표 작성 가이드.",
+    r: 15
+  },
+  {
+    id: "RAG_P2_P3_DOCUMENTS",
+    label: "RAG_P2_P3_DOCUMENTS",
+    file: "RAG_P2_P3_DOCUMENTS.md",
+    category: "knowledgebase",
+    desc: "P2/P3 임상 가이드 12개. ASD, DLD, AAC, 성인 담화, TBI, 치매, 마비말장애 등 커버리지 확장.",
+    r: 15
+  },
+  {
+    id: "RAG_EVALUATION_GUIDE",
+    label: "RAG_EVALUATION_GUIDE",
+    file: "RAG_EVALUATION_GUIDE.md",
+    category: "evaluation",
+    desc: "RAG 품질 평가 가이드. 레이어 1(검색) + 레이어 2(RAGAS 생성) 평가 구조, 골든 QA 셋 설계.",
+    r: 17
+  },
+  {
+    id: "RAG_LAYER1_EVAL_RESULTS",
+    label: "RAG_LAYER1_EVAL_RESULTS",
+    file: "RAG_LAYER1_EVAL_RESULTS.md",
+    category: "evaluation",
+    desc: "레이어 1 검색 품질 실측 결과. Recall@5 0.938, MRR 1.000, Precision@5 0.250 (미달 — P0 보강 후 재측정 예정).",
+    r: 14
+  },
+];
+
+const LINKS = [
+  { source: "RAG_GUIDE",              target: "RAG_IMPLEMENTATION",        label: "상세 참조" },
+  { source: "RAG_GUIDE",              target: "RAG_KNOWLEDGE_BASE_DESIGN",  label: "관련" },
+  { source: "RAG_IMPLEMENTATION",     target: "DATABASE_SETUP",             label: "pgvector 사용" },
+  { source: "RAG_IMPLEMENTATION",     target: "MODEL_LOADING_GUIDE",        label: "KURE-v1 사용" },
+  { source: "RAG_IMPLEMENTATION",     target: "RAG_KNOWLEDGE_BASE_DESIGN",  label: "문서 메타데이터" },
+  { source: "RAG_KNOWLEDGE_BASE_DESIGN", target: "RAG_P0_DOCUMENTS",        label: "P0 문서" },
+  { source: "RAG_KNOWLEDGE_BASE_DESIGN", target: "RAG_P1_DOCUMENTS",        label: "P1 문서" },
+  { source: "RAG_KNOWLEDGE_BASE_DESIGN", target: "RAG_P2_P3_DOCUMENTS",     label: "P2/P3 문서" },
+  { source: "RAG_SETUP_CHANGELOG",    target: "RAG_KNOWLEDGE_BASE_DESIGN",  label: "개선 내역" },
+  { source: "RAG_SETUP_CHANGELOG",    target: "RAG_P0_DOCUMENTS",           label: "P0 추가" },
+  { source: "RAG_SETUP_CHANGELOG",    target: "RAG_IMPLEMENTATION",         label: "코드 변경" },
+  { source: "RAG_EVALUATION_GUIDE",   target: "RAG_IMPLEMENTATION",         label: "평가 대상" },
+  { source: "RAG_EVALUATION_GUIDE",   target: "RAG_KNOWLEDGE_BASE_DESIGN",  label: "문서 품질" },
+  { source: "RAG_LAYER1_EVAL_RESULTS", target: "RAG_EVALUATION_GUIDE",      label: "기준 준수" },
+  { source: "RAG_LAYER1_EVAL_RESULTS", target: "RAG_KNOWLEDGE_BASE_DESIGN", label: "보강 근거" },
+  { source: "RAG_P1_DOCUMENTS",       target: "RAG_P0_DOCUMENTS",           label: "P0 기반 확장" },
+  { source: "RAG_P2_P3_DOCUMENTS",    target: "RAG_P1_DOCUMENTS",           label: "P1 기반 확장" },
+];
+
+const CATEGORY_COLOR = {
+  overview:       "#89b4fa",
+  implementation: "#a6e3a1",
+  knowledgebase:  "#fab387",
+  evaluation:     "#f38ba8",
+  changelog:      "#cba6f7",
+};
+
+// ─── SVG setup ───
+const svg = d3.select("#graph");
+const W = window.innerWidth, H = window.innerHeight;
+svg.attr("width", W).attr("height", H);
+
+const g = svg.append("g");
+
+// zoom
+svg.call(
+  d3.zoom()
+    .scaleExtent([0.2, 4])
+    .on("zoom", e => g.attr("transform", e.transform))
+).on("dblclick.zoom", null);
+
+// ─── Arrow markers ───
+const defs = svg.append("defs");
+Object.entries(CATEGORY_COLOR).forEach(([cat, color]) => {
+  defs.append("marker")
+    .attr("id", `arrow-${cat}`)
+    .attr("viewBox", "0 -5 10 10")
+    .attr("refX", 18)
+    .attr("refY", 0)
+    .attr("markerWidth", 6)
+    .attr("markerHeight", 6)
+    .attr("orient", "auto")
+    .append("path")
+    .attr("d", "M0,-5L10,0L0,5")
+    .attr("fill", color)
+    .attr("opacity", 0.5);
+});
+
+// ─── Force simulation ───
+const sim = d3.forceSimulation(NODES)
+  .force("link", d3.forceLink(LINKS).id(d => d.id).distance(d => {
+    // keep knowledge-base cluster tighter
+    const kb = ["RAG_P0_DOCUMENTS","RAG_P1_DOCUMENTS","RAG_P2_P3_DOCUMENTS","RAG_KNOWLEDGE_BASE_DESIGN"];
+    return (kb.includes(d.source.id) || kb.includes(d.target.id)) ? 110 : 160;
+  }).strength(0.4))
+  .force("charge", d3.forceManyBody().strength(-420))
+  .force("center", d3.forceCenter(W / 2, H / 2))
+  .force("collision", d3.forceCollide(d => d.r + 18));
+
+// ─── Links ───
+const linkSel = g.append("g")
+  .selectAll("line")
+  .data(LINKS)
+  .join("line")
+  .attr("class", "link")
+  .attr("marker-end", d => {
+    const cat = NODES.find(n => n.id === (d.source.id || d.source))?.category || "overview";
+    return `url(#arrow-${cat})`;
+  });
+
+// edge labels (hidden until zoom > 1.2)
+const edgeLabelSel = g.append("g")
+  .selectAll("text")
+  .data(LINKS)
+  .join("text")
+  .attr("class", "edge-label")
+  .text(d => d.label);
+
+// ─── Nodes ───
+const nodeSel = g.append("g")
+  .selectAll("g")
+  .data(NODES)
+  .join("g")
+  .attr("class", "node")
+  .call(
+    d3.drag()
+      .on("start", (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on("drag",  (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on("end",   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; })
+  );
+
+nodeSel.append("circle")
+  .attr("r", d => d.r)
+  .attr("fill", d => CATEGORY_COLOR[d.category] + "22")
+  .attr("stroke", d => CATEGORY_COLOR[d.category]);
+
+nodeSel.append("text")
+  .attr("dy", d => d.r + 13)
+  .attr("text-anchor", "middle")
+  .text(d => d.label.replace("RAG_", ""));
+
+// ─── Tooltip ───
+const tooltip = document.getElementById("tooltip");
+
+function getNeighbors(d) {
+  const ids = new Set();
+  const lids = new Set();
+  LINKS.forEach((l, i) => {
+    const s = l.source.id || l.source;
+    const t = l.target.id || l.target;
+    if (s === d.id || t === d.id) { ids.add(s); ids.add(t); lids.add(i); }
+  });
+  return { nodeIds: ids, linkIds: lids };
+}
+
+nodeSel.on("click", function(e, d) {
+  e.stopPropagation();
+  const { nodeIds, linkIds } = getNeighbors(d);
+
+  nodeSel.classed("highlighted", n => nodeIds.has(n.id));
+  nodeSel.classed("dimmed", n => !nodeIds.has(n.id));
+  linkSel.classed("highlighted", (_, i) => linkIds.has(i));
+  linkSel.classed("dimmed", (_, i) => !linkIds.has(i));
+})
+.on("mouseover", function(e, d) {
+  const linkedFiles = [];
+  LINKS.forEach(l => {
+    const s = l.source.id || l.source;
+    const t = l.target.id || l.target;
+    if (s === d.id) linkedFiles.push(`→ ${t} (${l.label})`);
+    if (t === d.id) linkedFiles.push(`← ${s} (${l.label})`);
+  });
+
+  tooltip.innerHTML = `
+    <div class="tt-title">${d.file}</div>
+    <span class="tt-tag" style="background:${CATEGORY_COLOR[d.category]}33;color:${CATEGORY_COLOR[d.category]}">${d.category}</span>
+    <div class="tt-desc">${d.desc}</div>
+    ${linkedFiles.length ? `<div class="tt-links">연결: <span>${linkedFiles.join("</span> <span>")}</span></div>` : ""}
+  `;
+  tooltip.classList.add("visible");
+})
+.on("mousemove", function(e) {
+  const x = e.clientX + 14, y = e.clientY - 10;
+  const tw = tooltip.offsetWidth;
+  tooltip.style.left = (x + tw > window.innerWidth ? x - tw - 28 : x) + "px";
+  tooltip.style.top  = Math.min(y, window.innerHeight - tooltip.offsetHeight - 10) + "px";
+})
+.on("mouseout", function() {
+  tooltip.classList.remove("visible");
+});
+
+svg.on("click", () => {
+  nodeSel.classed("highlighted dimmed", false);
+  linkSel.classed("highlighted dimmed", false);
+});
+
+// ─── Tick ───
+sim.on("tick", () => {
+  linkSel
+    .attr("x1", d => d.source.x)
+    .attr("y1", d => d.source.y)
+    .attr("x2", d => d.target.x)
+    .attr("y2", d => d.target.y);
+
+  edgeLabelSel
+    .attr("x", d => (d.source.x + d.target.x) / 2)
+    .attr("y", d => (d.source.y + d.target.y) / 2);
+
+  nodeSel.attr("transform", d => `translate(${d.x},${d.y})`);
+});
+
+// ─── Resize ───
+window.addEventListener("resize", () => {
+  const W2 = window.innerWidth, H2 = window.innerHeight;
+  svg.attr("width", W2).attr("height", H2);
+  sim.force("center", d3.forceCenter(W2 / 2, H2 / 2)).alpha(0.3).restart();
+});
+</script>
+</body>
+</html>

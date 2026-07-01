@@ -52,8 +52,13 @@ def _load_models() -> CPUModels:
     return CPUModels(vad=vad, embedding=embedding)
 
 
-def _run_preprocess_loop(sqs, models: CPUModels) -> None:
+def _make_sqs_client():
+    return boto3.client("sqs", region_name=settings.aws_region)
+
+
+def _run_preprocess_loop(models: CPUModels) -> None:
     logger.info(f"CPU Worker 시작. 큐: {settings.sqs_audio_preprocess_queue_url}")
+    sqs = _make_sqs_client()
     while True:
         try:
             response = sqs.receive_message(
@@ -65,6 +70,7 @@ def _run_preprocess_loop(sqs, models: CPUModels) -> None:
             )
         except Exception as e:
             logger.error(f"[cpu-worker] SQS receive_message 실패: {e}")
+            sqs = _make_sqs_client()
             continue
 
         messages = response.get("Messages", [])
@@ -98,8 +104,9 @@ def _run_preprocess_loop(sqs, models: CPUModels) -> None:
             logger.error(f"CPU STAGE 실패: {e}")
 
 
-def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
+def _run_report_loop(embedding: KUREEmbeddingWrapper) -> None:
     logger.info(f"Report Worker 시작. 큐: {settings.sqs_report_analysis_queue_url}")
+    sqs = _make_sqs_client()
     while True:
         try:
             response = sqs.receive_message(
@@ -111,6 +118,7 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
             )
         except Exception as e:
             logger.error(f"[report-loop] SQS receive_message 실패: {e}")
+            sqs = _make_sqs_client()
             continue
 
         messages = response.get("Messages", [])
@@ -180,17 +188,16 @@ def _run_report_loop(sqs, embedding: KUREEmbeddingWrapper) -> None:
 
 def start_worker() -> None:
     initialize_observability()
-    sqs = boto3.client("sqs", region_name=settings.aws_region)
     models = _load_models()
 
     report_thread = threading.Thread(
         target=_run_report_loop,
-        args=(sqs, models.embedding),
+        args=(models.embedding,),
         daemon=True,
     )
     report_thread.start()
 
-    _run_preprocess_loop(sqs, models)
+    _run_preprocess_loop(models)
 
 
 if __name__ == "__main__":
