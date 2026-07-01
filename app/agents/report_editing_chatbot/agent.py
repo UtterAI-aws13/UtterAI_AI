@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from loguru import logger
 from pydantic import BaseModel, Field
@@ -21,15 +21,20 @@ from app.agents.report_editing_chatbot.tools import (
 
 # ── Response schema ──────────────────────────────────────────────────────────
 
+SectionCode = Literal["S", "O", "A", "P"]
+
 
 class IntentClassification(BaseModel):
     intent: str = "general_question"
-    target_section: Optional[str] = None
+    target_section: Optional[SectionCode] = None
     requires_patch: bool = False
 
 
 class PatchProposal(BaseModel):
-    target_section: str
+    # report_patch_proposals.target_section은 VARCHAR(20) 단일 섹션 코드용 컬럼이다.
+    # 자유 텍스트를 허용하면 모델이 "S, A, P (Multiple sections)" 같은 값을 반환해
+    # DB insert가 StringDataRightTruncation으로 실패하고 채팅 응답 전체가 죽는다.
+    target_section: SectionCode
     original_text: str
     proposed_text: str
     rationale: str
