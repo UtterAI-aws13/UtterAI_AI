@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.agents.report_editing_chatbot.agent import (
     ChatResponse,
     IntentClassification,
