@@ -5,7 +5,10 @@
 # 필수 필드 누락 시 빈 문자열로 채워 schema 오류를 방지한다 (schema repair).
 import json
 import uuid
+from time import perf_counter
 from typing import TYPE_CHECKING
+
+from opentelemetry import trace
 
 from app.schemas import (
     Utterance, SpeakerMetrics, RagResult, ReportDraft,
@@ -13,6 +16,7 @@ from app.schemas import (
 )
 from app.rag.prompt_templates import build_report_prompt
 from app.config import settings
+from app.observability.phoenix import safe_id, set_safe_attributes
 
 if TYPE_CHECKING:
     from app.schemas.job import ReportJobMessage
@@ -147,23 +151,39 @@ async def run_bedrock_report_stage(
     session_id = message.session_id
     transcript_id = message.transcript_id
     report_saved = False
+    tracer = trace.get_tracer(__name__)
 
     try:
-        logger.info(f"[{job_id}] REPORT STAGE: LOADING TRANSCRIPT transcript_id={transcript_id} final_s3_key={message.final_s3_key!r}")
-        if message.final_s3_key:
-            from app.storage.s3_client import get_bytes
-            raw = get_bytes(settings.s3_bucket_transcript, message.final_s3_key)
-            segments = json.loads(raw)
-            logger.info(f"[{job_id}] REPORT STAGE: TRANSCRIPT LOADED FROM S3 key={message.final_s3_key} segments={len(segments)}")
-        else:
-            segments = await get_transcript_segments(db, transcript_id)
-            logger.info(f"[{job_id}] REPORT STAGE: TRANSCRIPT LOADED FROM RDS segments={len(segments)}")
-        if not segments:
-            logger.warning(f"[{job_id}] REPORT STAGE: transcript_segments 비어있음 — transcript_id={transcript_id}")
+        with tracer.start_as_current_span("phoenix.cpu_report.load_transcript") as span:
+            set_safe_attributes(span, {
+                "job.hash": safe_id(job_id),
+                "session.hash": safe_id(session_id),
+                "transcript.hash": safe_id(transcript_id),
+                "transcript.source": "s3" if message.final_s3_key else "rds",
+            })
+            logger.info(f"[{job_id}] REPORT STAGE: LOADING TRANSCRIPT transcript_id={transcript_id} final_s3_key={message.final_s3_key!r}")
+            if message.final_s3_key:
+                from app.storage.s3_client import get_bytes
+                raw = get_bytes(settings.s3_bucket_transcript, message.final_s3_key)
+                segments = json.loads(raw)
+                logger.info(f"[{job_id}] REPORT STAGE: TRANSCRIPT LOADED FROM S3 key={message.final_s3_key} segments={len(segments)}")
+            else:
+                segments = await get_transcript_segments(db, transcript_id)
+                logger.info(f"[{job_id}] REPORT STAGE: TRANSCRIPT LOADED FROM RDS segments={len(segments)}")
+            set_safe_attributes(span, {"transcript.segment_count": len(segments)})
+            if not segments:
+                logger.warning(f"[{job_id}] REPORT STAGE: transcript_segments 비어있음 — transcript_id={transcript_id}")
 
-        logger.info(f"[{job_id}] REPORT STAGE: COMPUTING METRICS ({len(segments)} segments)")
-        metrics = _compute_metrics_from_segments(segments)
-        logger.info(f"[{job_id}] REPORT STAGE: metrics={metrics}")
+        with tracer.start_as_current_span("phoenix.cpu_report.compute_metrics") as span:
+            logger.info(f"[{job_id}] REPORT STAGE: COMPUTING METRICS ({len(segments)} segments)")
+            metrics = _compute_metrics_from_segments(segments)
+            set_safe_attributes(span, {
+                "metrics.mlu_word": metrics.get("mlu_word"),
+                "metrics.ndw": metrics.get("ndw"),
+                "metrics.ttr": metrics.get("ttr"),
+                "metrics.avg_response_latency_sec": metrics.get("avg_response_latency_sec"),
+            })
+            logger.info(f"[{job_id}] REPORT STAGE: metrics={metrics}")
 
         logger.info(f"[{job_id}] REPORT STAGE: LOADING SESSION CONTEXT")
         session_ctx = await get_session_context(db, session_id)
@@ -207,22 +227,44 @@ async def run_bedrock_report_stage(
             from app.rag.prompt_templates import build_template_report_prompt
 
             logger.info(f"[{job_id}] REPORT STAGE: [TEMPLATE] RAG 시작")
-            evidence = await retrieve_evidence(
-                metrics=metrics,
-                session=session,
-                embedding_model=embedding_model,
-            )
+            rag_start = perf_counter()
+            with tracer.start_as_current_span("phoenix.cpu_report.rag") as span:
+                set_safe_attributes(span, {"report.path": "template", "rag.top_k": settings.rag_top_k})
+                evidence = await retrieve_evidence(
+                    metrics=metrics,
+                    session=session,
+                    embedding_model=embedding_model,
+                )
+                set_safe_attributes(span, {
+                    "rag.evidence_count": len(evidence),
+                    "rag.duration_ms": round((perf_counter() - rag_start) * 1000, 2),
+                })
             logger.info(f"[{job_id}] REPORT STAGE: [TEMPLATE] RAG 완료 evidence={len(evidence)}")
 
-            prompt = build_template_report_prompt(
-                metrics=metrics,
-                utterances=patient_utterances or all_utterances,
-                session=session,
-                evidence=evidence,
-                sections=template_sections,
-            )
+            with tracer.start_as_current_span("phoenix.cpu_report.build_prompt") as span:
+                prompt = build_template_report_prompt(
+                    metrics=metrics,
+                    utterances=patient_utterances or all_utterances,
+                    session=session,
+                    evidence=evidence,
+                    sections=template_sections,
+                )
+                set_safe_attributes(span, {
+                    "report.path": "template",
+                    "prompt.length": len(prompt),
+                    "utterance.patient_count": len(patient_utterances),
+                    "utterance.total_count": len(all_utterances),
+                })
             logger.debug(f"[{job_id}] REPORT STAGE: [TEMPLATE] prompt_len={len(prompt)}")
-            report_data = invoke_claude(prompt)
+            llm_start = perf_counter()
+            with tracer.start_as_current_span("phoenix.cpu_report.invoke_llm") as span:
+                set_safe_attributes(span, {
+                    "report.path": "template",
+                    "llm.provider": "bedrock",
+                    "llm.model": settings.bedrock_report_model_id,
+                })
+                report_data = invoke_claude(prompt)
+                set_safe_attributes(span, {"llm.duration_ms": round((perf_counter() - llm_start) * 1000, 2)})
             logger.info(f"[{job_id}] REPORT STAGE: [TEMPLATE] BEDROCK 완료 keys={list(report_data.keys())}")
 
             evidence_chunk_ids = [e.get("chunk_id", "") for e in evidence if isinstance(e, dict)]
@@ -238,13 +280,28 @@ async def run_bedrock_report_stage(
         elif settings.agentcore_agent_id:
             # AgentCore 경로: search_evidence tool로 RAG 검색과 SOAP Note 생성을 통합 처리
             logger.info(f"[{job_id}] REPORT STAGE: AGENTCORE 호출 시작 session_id={session_id}")
-            prompt = build_session_prompt(
-                metrics=metrics,
-                utterances=patient_utterances or all_utterances,
-                session=session,
-            )
+            with tracer.start_as_current_span("phoenix.cpu_report.build_prompt") as span:
+                prompt = build_session_prompt(
+                    metrics=metrics,
+                    utterances=patient_utterances or all_utterances,
+                    session=session,
+                )
+                set_safe_attributes(span, {
+                    "report.path": "agentcore",
+                    "prompt.length": len(prompt),
+                    "utterance.patient_count": len(patient_utterances),
+                    "utterance.total_count": len(all_utterances),
+                })
             logger.debug(f"[{job_id}] REPORT STAGE: prompt_len={len(prompt)}")
-            report_data = invoke_agent(prompt=prompt, session_id=session_id)
+            llm_start = perf_counter()
+            with tracer.start_as_current_span("phoenix.cpu_report.invoke_llm") as span:
+                set_safe_attributes(span, {
+                    "report.path": "agentcore",
+                    "llm.provider": "bedrock-agentcore",
+                    "llm.model": settings.bedrock_report_model_id,
+                })
+                report_data = invoke_agent(prompt=prompt, session_id=session_id)
+                set_safe_attributes(span, {"llm.duration_ms": round((perf_counter() - llm_start) * 1000, 2)})
             logger.info(f"[{job_id}] REPORT STAGE: AGENTCORE 완료 keys={list(report_data.keys())}")
             soap_note = report_data.get("soap_note", {})
         else:
@@ -254,20 +311,42 @@ async def run_bedrock_report_stage(
             from app.rag.prompt_templates import build_bedrock_report_prompt
 
             logger.info(f"[{job_id}] REPORT STAGE: [FALLBACK] RAG 시작 (agentcore_agent_id 미설정)")
-            evidence = await retrieve_evidence(
-                metrics=metrics,
-                session=session,
-                embedding_model=embedding_model,
-            )
+            rag_start = perf_counter()
+            with tracer.start_as_current_span("phoenix.cpu_report.rag") as span:
+                set_safe_attributes(span, {"report.path": "fallback", "rag.top_k": settings.rag_top_k})
+                evidence = await retrieve_evidence(
+                    metrics=metrics,
+                    session=session,
+                    embedding_model=embedding_model,
+                )
+                set_safe_attributes(span, {
+                    "rag.evidence_count": len(evidence),
+                    "rag.duration_ms": round((perf_counter() - rag_start) * 1000, 2),
+                })
             logger.info(f"[{job_id}] REPORT STAGE: [FALLBACK] RAG 완료 evidence={len(evidence)}")
-            prompt = build_bedrock_report_prompt(
-                metrics=metrics,
-                utterances=patient_utterances or all_utterances,
-                session=session,
-                evidence=evidence,
-            )
+            with tracer.start_as_current_span("phoenix.cpu_report.build_prompt") as span:
+                prompt = build_bedrock_report_prompt(
+                    metrics=metrics,
+                    utterances=patient_utterances or all_utterances,
+                    session=session,
+                    evidence=evidence,
+                )
+                set_safe_attributes(span, {
+                    "report.path": "fallback",
+                    "prompt.length": len(prompt),
+                    "utterance.patient_count": len(patient_utterances),
+                    "utterance.total_count": len(all_utterances),
+                })
             logger.debug(f"[{job_id}] REPORT STAGE: [FALLBACK] prompt_len={len(prompt)}")
-            report_data = invoke_claude(prompt)
+            llm_start = perf_counter()
+            with tracer.start_as_current_span("phoenix.cpu_report.invoke_llm") as span:
+                set_safe_attributes(span, {
+                    "report.path": "fallback",
+                    "llm.provider": "bedrock",
+                    "llm.model": settings.bedrock_report_model_id,
+                })
+                report_data = invoke_claude(prompt)
+                set_safe_attributes(span, {"llm.duration_ms": round((perf_counter() - llm_start) * 1000, 2)})
             logger.info(f"[{job_id}] REPORT STAGE: [FALLBACK] BEDROCK 완료 keys={list(report_data.keys())}")
             evidence_chunk_ids = [e.get("chunk_id", "") for e in evidence if isinstance(e, dict)]
             soap_note = report_data.get("soap_note", {})
@@ -275,17 +354,24 @@ async def run_bedrock_report_stage(
         clinical_flags = report_data.get("clinical_flags", [])
 
         logger.info(f"[{job_id}] REPORT STAGE: SAVING")
-        await save_report(
-            db=db,
-            job_id=job_id,
-            session_id=session_id,
-            soap_note=soap_note,
-            clinical_flags=clinical_flags,
-            evidence_chunk_ids=evidence_chunk_ids,
-            model_used=settings.bedrock_report_model_id,
-            template_id=template_id,
-            custom_sections=custom_sections_to_save,
-        )
+        with tracer.start_as_current_span("phoenix.cpu_report.persist_report") as span:
+            set_safe_attributes(span, {
+                "report.path": "template" if template_sections else "agentcore" if settings.agentcore_agent_id else "fallback",
+                "report.clinical_flag_count": len(clinical_flags),
+                "rag.evidence_count": len(evidence_chunk_ids),
+                "template.enabled": bool(template_sections),
+            })
+            await save_report(
+                db=db,
+                job_id=job_id,
+                session_id=session_id,
+                soap_note=soap_note,
+                clinical_flags=clinical_flags,
+                evidence_chunk_ids=evidence_chunk_ids,
+                model_used=settings.bedrock_report_model_id,
+                template_id=template_id,
+                custom_sections=custom_sections_to_save,
+            )
         report_saved = True
         await update_session_status(db, session_id, "REPORT_READY")
         logger.info(f"[{job_id}] REPORT STAGE: DONE")
