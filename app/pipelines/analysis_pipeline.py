@@ -129,6 +129,7 @@ async def run_cpu_stage(message: JobMessage, models: CPUModels) -> None:
             wav_s3_key=wav_key,
             vad_s3_key=vad_key,
             options=message.options,
+            user_id=message.user_id,
         )
         with tracer.start_as_current_span(
             "worker.cpu.publish_ml_gpu",

@@ -108,6 +108,8 @@ def start_worker() -> None:
                 msg = MLGpuMessage(**body)
                 span.set_attribute("session_id", msg.session_id)
                 span.set_attribute("job_id", msg.job_id)
+                if msg.user_id:
+                    span.set_attribute("user.id", msg.user_id)
 
                 async def _run():
                     async with AsyncSession(get_be_engine()) as session:

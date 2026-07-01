@@ -99,6 +99,7 @@ class MLGpuMessage(BaseModel):
     wav_s3_key: str       # 전처리된 WAV S3 경로
     vad_s3_key: str       # VAD 결과 JSON S3 경로
     options: JobOptions = JobOptions()
+    user_id: str | None = None
 
 
 class LLMMessage(BaseModel):
