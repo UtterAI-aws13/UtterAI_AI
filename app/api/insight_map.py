@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 from app.agents.insight_map.explainer_agent import run_explainer
 from app.agents.insight_map.query_resolver_agent import run_query_resolver
+from app.rag.paper_metadata import get_doi_url
+from app.rag.retriever import retrieve_evidence
 
 router = APIRouter()
 
@@ -48,3 +50,35 @@ class ExplainResponse(BaseModel):
 def explain(request: ExplainRequest) -> ExplainResponse:
     result = run_explainer([node.model_dump() for node in request.path])
     return ExplainResponse(**result)
+
+
+class EvidenceRequest(BaseModel):
+    query: str
+    top_k: int = 3
+
+
+class EvidenceItem(BaseModel):
+    title: str
+    content: str
+    score: float
+    doi_url: str | None = None
+
+
+class EvidenceResponse(BaseModel):
+    evidence: list[EvidenceItem]
+
+
+@router.post("/evidence", response_model=EvidenceResponse)
+async def get_evidence(request: EvidenceRequest) -> EvidenceResponse:
+    results = await retrieve_evidence(metrics={}, session={}, top_k=request.top_k, direct_query=request.query)
+    return EvidenceResponse(
+        evidence=[
+            EvidenceItem(
+                title=r["title"],
+                content=r["content"],
+                score=r["score"],
+                doi_url=get_doi_url(r["document_id"]),
+            )
+            for r in results
+        ]
+    )

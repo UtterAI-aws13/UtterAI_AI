@@ -87,4 +87,13 @@ async def retrieve_evidence(
             score_threshold=settings.rag_score_threshold,
         )
 
-    return [{"chunk_id": e.chunk_id, "title": e.title, "content": e.text, "score": e.score} for e in results]
+    return [
+        {
+            "chunk_id": e.chunk_id,
+            "document_id": e.document_id,
+            "title": e.title,
+            "content": e.text,
+            "score": e.score,
+        }
+        for e in results
+    ]
