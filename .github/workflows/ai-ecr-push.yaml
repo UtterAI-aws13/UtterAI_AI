@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - "app/**"
+      - "lambda/**"
       - "pyproject.toml"
       - "uv.lock"
       - "Dockerfile*"
@@ -97,13 +98,14 @@ jobs:
           echo "IMAGE_TAG=$IMAGE_TAG"
 
   detect-changes:
-    name: Detect CPU/GPU image changes
+    name: Detect CPU/GPU/Lambda image changes
     runs-on: ubuntu-latest
     needs: prepare
 
     outputs:
       build_cpu: ${{ steps.detect.outputs.build_cpu }}
       build_gpu: ${{ steps.detect.outputs.build_gpu }}
+      build_kure_retriever: ${{ steps.detect.outputs.build_kure_retriever }}
 
     steps:
       - name: Checkout repository
@@ -117,10 +119,12 @@ jobs:
         run: |
           BUILD_CPU="false"
           BUILD_GPU="false"
+          BUILD_KURE_RETRIEVER="false"
 
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             BUILD_CPU="true"
             BUILD_GPU="true"
+            BUILD_KURE_RETRIEVER="true"
           else
             BASE_SHA="${{ github.event.before }}"
             HEAD_SHA="${{ github.sha }}"
@@ -146,9 +150,13 @@ jobs:
                 Dockerfile.gpu|app/workers/llm_gpu_worker.py|app/workers/ml_gpu_worker.py)
                   BUILD_GPU="true"
                   ;;
+                lambda/kure_retriever/*)
+                  BUILD_KURE_RETRIEVER="true"
+                  ;;
                 Dockerfile|.dockerignore|pyproject.toml|uv.lock|.github/workflows/ai-ecr-push.yaml|app/*|app/api/*|app/metrics/*|app/mocks/*|app/models/*|app/observability/*|app/pipelines/*|app/rag/*|app/schemas/*|app/storage/*|app/utils/*|app/workers/*)
                   BUILD_CPU="true"
                   BUILD_GPU="true"
+                  BUILD_KURE_RETRIEVER="true"
                   ;;
               esac
             done < /tmp/changed-files.txt
@@ -156,9 +164,11 @@ jobs:
 
           echo "build_cpu=$BUILD_CPU" >> "$GITHUB_OUTPUT"
           echo "build_gpu=$BUILD_GPU" >> "$GITHUB_OUTPUT"
+          echo "build_kure_retriever=$BUILD_KURE_RETRIEVER" >> "$GITHUB_OUTPUT"
 
           echo "BUILD_CPU=$BUILD_CPU"
           echo "BUILD_GPU=$BUILD_GPU"
+          echo "BUILD_KURE_RETRIEVER=$BUILD_KURE_RETRIEVER"
 
   build-and-push-cpu:
     name: Build and push CPU image
@@ -319,6 +329,102 @@ jobs:
           docker push "$IMAGE_URI"
 
           echo "GPU_IMAGE_URI=$IMAGE_URI"
+
+  build-and-push-kure-retriever:
+    name: Build and push KURE retriever Lambda image
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - resolve-image
+      - detect-changes
+    if: needs.detect-changes.outputs.build_kure_retriever == 'true'
+
+    environment:
+      name: ${{ needs.prepare.outputs.target_env }}
+
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      ECR_KURE_RETRIEVER_REPOSITORY: ${{ vars.ECR_AI_KURE_RETRIEVER_REPOSITORY }}
+      IMAGE_TAG: ${{ needs.resolve-image.outputs.image_tag }}
+      TARGET_ENV: ${{ needs.prepare.outputs.target_env }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.source_ref }}
+
+      - name: Validate required variables
+        run: |
+          if [ -z "$AWS_REGION" ]; then
+            echo "AWS_REGION GitHub Variable이 필요합니다."
+            exit 1
+          fi
+
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            echo "AWS_ROLE_ARN GitHub Variable이 필요합니다."
+            exit 1
+          fi
+
+          if [ -z "$ECR_KURE_RETRIEVER_REPOSITORY" ]; then
+            echo "ECR_AI_KURE_RETRIEVER_REPOSITORY GitHub Variable이 필요합니다."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push KURE retriever Lambda image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_KURE_RETRIEVER_REPOSITORY}:${IMAGE_TAG}"
+          LATEST_URI="${ECR_REGISTRY}/${ECR_KURE_RETRIEVER_REPOSITORY}:latest"
+
+          echo "Build KURE retriever image: $IMAGE_URI"
+          docker build -f lambda/kure_retriever/Dockerfile -t "$IMAGE_URI" -t "$LATEST_URI" .
+
+          echo "Push KURE retriever image: $IMAGE_URI"
+          docker push "$IMAGE_URI"
+          docker push "$LATEST_URI"
+
+          echo "KURE_RETRIEVER_IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
+
+      # Lambda(package_type=Image)는 ECR에 새 이미지를 푸시하는 것만으로 재배포되지 않는다.
+      # Terraform은 image_uri를 latest로 고정하고 lifecycle.ignore_changes로 무시하므로,
+      # 실제 배포는 이 단계에서 update-function-code로 직접 트리거한다.
+      #
+      # 최초 부트스트랩 시점에는 이 Lambda 함수가 아직 terraform apply되지 않아
+      # 존재하지 않을 수 있다 (aws_lambda_function은 package_type=Image라
+      # 생성 시점에 ECR 이미지가 이미 있어야 하므로, "이미지 push → terraform apply"
+      # 순서가 강제된다). 함수가 없으면 배포를 건너뛰고 이미지 push만 수행한다.
+      - name: Deploy image to Lambda
+        run: |
+          FUNCTION_NAME="utterai-${TARGET_ENV}-kure-retriever"
+
+          if ! aws lambda get-function --function-name "$FUNCTION_NAME" --region "$AWS_REGION" > /dev/null 2>&1; then
+            echo "$FUNCTION_NAME 이(가) 아직 존재하지 않습니다. 이미지 push까지만 수행하고 배포는 건너뜁니다."
+            echo "terraform apply로 Lambda를 먼저 생성한 뒤 이 워크플로를 다시 실행하세요."
+            exit 0
+          fi
+
+          echo "Updating $FUNCTION_NAME to $KURE_RETRIEVER_IMAGE_URI"
+          aws lambda update-function-code \
+            --function-name "$FUNCTION_NAME" \
+            --image-uri "$KURE_RETRIEVER_IMAGE_URI" \
+            --region "$AWS_REGION"
+
+          aws lambda wait function-updated \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION"
 
   dispatch-gitops-update:
     name: Dispatch GitOps AI image update
