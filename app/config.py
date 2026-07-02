@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     # RAG 검색 파라미터
     rag_top_k: int = 5               # 검색 결과 상위 k개
     rag_score_threshold: float = 0.5  # 이 점수 미만의 chunk는 근거에서 제외
+    rag_query_strategy: str = "metrics-vector-baseline"
+    rag_index_version: str = "pgvector-cosine-v1"
+    rag_rerank_enabled: bool = False
+    rag_rerank_top_k: int = 0
 
     # OpenTelemetry
     otel_service_name: str = "ai"

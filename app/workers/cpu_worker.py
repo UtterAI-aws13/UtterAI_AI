@@ -16,7 +16,7 @@ from app.config import settings
 from app.observability.otel import initialize_observability
 from app.observability.metrics import record_sqs_receive
 from app.observability.metrics import record_stage_failure
-from app.observability.phoenix import safe_id, set_safe_attributes
+from app.observability.phoenix import OI_CHAIN, safe_id, set_openinference_span_kind, set_safe_attributes
 from app.observability.sqs import extract_context_from_message_attributes
 from app.schemas import JobMessage
 from app.schemas.job import ReportJobMessage
@@ -90,6 +90,7 @@ def _run_preprocess_loop(models: CPUModels) -> None:
                 context=message_context,
                 kind=trace.SpanKind.CONSUMER,
             ) as span:
+                set_openinference_span_kind(span, OI_CHAIN)
                 record_sqs_receive("cpu-worker")
                 job = JobMessage(**body)
                 set_safe_attributes(span, {
@@ -156,6 +157,7 @@ def _run_report_loop(embedding: KUREEmbeddingWrapper) -> None:
                 context=message_context,
                 kind=trace.SpanKind.CONSUMER,
             ) as span:
+                set_openinference_span_kind(span, OI_CHAIN)
                 record_sqs_receive("cpu-worker-report")
                 msg = ReportJobMessage(**body)
                 set_safe_attributes(span, {

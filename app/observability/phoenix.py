@@ -13,6 +13,11 @@ from typing import Any
 
 from app.config import settings
 
+OI_SPAN_KIND = "openinference.span.kind"
+OI_CHAIN = "CHAIN"
+OI_RETRIEVER = "RETRIEVER"
+OI_LLM = "LLM"
+
 _BLOCKED_ATTRIBUTE_KEYS = {
     "prompt",
     "llm.prompt",
@@ -55,3 +60,9 @@ def set_safe_attributes(span: Any, attributes: Mapping[str, Any]) -> None:
             continue
         if isinstance(value, (str, bool, int, float)):
             span.set_attribute(key, value)
+
+
+def set_openinference_span_kind(span: Any, kind: str) -> None:
+    if not phoenix_enabled():
+        return
+    span.set_attribute(OI_SPAN_KIND, kind)
