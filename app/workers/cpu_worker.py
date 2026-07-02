@@ -16,6 +16,7 @@ from app.config import settings
 from app.observability.otel import initialize_observability
 from app.observability.metrics import record_sqs_receive
 from app.observability.metrics import record_stage_failure
+from app.observability.phoenix import safe_id, set_safe_attributes
 from app.observability.sqs import extract_context_from_message_attributes
 from app.schemas import JobMessage
 from app.schemas.job import ReportJobMessage
@@ -91,8 +92,11 @@ def _run_preprocess_loop(models: CPUModels) -> None:
             ) as span:
                 record_sqs_receive("cpu-worker")
                 job = JobMessage(**body)
-                span.set_attribute("session_id", job.session_id)
-                span.set_attribute("user_id", job.user_id)
+                set_safe_attributes(span, {
+                    "session.hash": safe_id(job.session_id),
+                    "job.hash": safe_id(job.job_id),
+                    "worker.queue": "audio-preprocess",
+                })
                 asyncio.run(run_cpu_stage(job, models))
                 sqs.delete_message(
                     QueueUrl=settings.sqs_audio_preprocess_queue_url,
@@ -154,8 +158,12 @@ def _run_report_loop(embedding: KUREEmbeddingWrapper) -> None:
             ) as span:
                 record_sqs_receive("cpu-worker-report")
                 msg = ReportJobMessage(**body)
-                span.set_attribute("session_id", msg.session_id)
-                span.set_attribute("job_id", msg.job_id)
+                set_safe_attributes(span, {
+                    "session.hash": safe_id(msg.session_id),
+                    "job.hash": safe_id(msg.job_id),
+                    "transcript.hash": safe_id(msg.transcript_id),
+                    "worker.queue": "report-analysis",
+                })
 
                 logger.info(f"[report-loop] BE DB 세션 열기 job_id={job_id}")
 

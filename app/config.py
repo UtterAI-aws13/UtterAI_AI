@@ -101,6 +101,9 @@ class Settings(BaseSettings):
     otel_logs_exporter: str = "none"
     otel_resource_attributes: str = "deployment.environment=local,team=utterai"
 
+    # Phoenix PoC tracing
+    phoenix_tracing_enabled: bool = False
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
