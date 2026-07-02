@@ -16,7 +16,14 @@ from app.schemas import (
 )
 from app.rag.prompt_templates import build_report_prompt
 from app.config import settings
-from app.observability.phoenix import safe_id, set_safe_attributes
+from app.observability.phoenix import (
+    OI_CHAIN,
+    OI_LLM,
+    OI_RETRIEVER,
+    safe_id,
+    set_openinference_span_kind,
+    set_safe_attributes,
+)
 
 if TYPE_CHECKING:
     from app.schemas.job import ReportJobMessage
@@ -130,6 +137,31 @@ def _compute_metrics_from_segments(segments: list[dict]) -> dict:
     }
 
 
+def _rag_observability_attributes(evidence: list[dict]) -> dict[str, object]:
+    scores = [
+        float(item["score"])
+        for item in evidence
+        if isinstance(item, dict) and isinstance(item.get("score"), (int, float))
+    ]
+    attrs: dict[str, object] = {
+        "rag.evidence_count": len(evidence),
+        "rag.query_strategy": settings.rag_query_strategy,
+        "rag.index_version": settings.rag_index_version,
+        "rag.embedding_model": settings.embedding_model_name,
+        "rag.score_threshold": settings.rag_score_threshold,
+        "rag.rerank_enabled": settings.rag_rerank_enabled,
+    }
+    if settings.rag_rerank_top_k:
+        attrs["rag.rerank_top_k"] = settings.rag_rerank_top_k
+    if scores:
+        attrs.update({
+            "rag.score_top1": round(max(scores), 4),
+            "rag.score_avg": round(sum(scores) / len(scores), 4),
+            "rag.score_min": round(min(scores), 4),
+        })
+    return attrs
+
+
 async def run_bedrock_report_stage(
     message: "ReportJobMessage",
     retriever,
@@ -155,6 +187,7 @@ async def run_bedrock_report_stage(
 
     try:
         with tracer.start_as_current_span("phoenix.cpu_report.load_transcript") as span:
+            set_openinference_span_kind(span, OI_CHAIN)
             set_safe_attributes(span, {
                 "job.hash": safe_id(job_id),
                 "session.hash": safe_id(session_id),
@@ -175,6 +208,7 @@ async def run_bedrock_report_stage(
                 logger.warning(f"[{job_id}] REPORT STAGE: transcript_segments 비어있음 — transcript_id={transcript_id}")
 
         with tracer.start_as_current_span("phoenix.cpu_report.compute_metrics") as span:
+            set_openinference_span_kind(span, OI_CHAIN)
             logger.info(f"[{job_id}] REPORT STAGE: COMPUTING METRICS ({len(segments)} segments)")
             metrics = _compute_metrics_from_segments(segments)
             set_safe_attributes(span, {
@@ -229,19 +263,20 @@ async def run_bedrock_report_stage(
             logger.info(f"[{job_id}] REPORT STAGE: [TEMPLATE] RAG 시작")
             rag_start = perf_counter()
             with tracer.start_as_current_span("phoenix.cpu_report.rag") as span:
+                set_openinference_span_kind(span, OI_RETRIEVER)
                 set_safe_attributes(span, {"report.path": "template", "rag.top_k": settings.rag_top_k})
                 evidence = await retrieve_evidence(
                     metrics=metrics,
                     session=session,
                     embedding_model=embedding_model,
                 )
-                set_safe_attributes(span, {
-                    "rag.evidence_count": len(evidence),
-                    "rag.duration_ms": round((perf_counter() - rag_start) * 1000, 2),
-                })
+                rag_attrs = _rag_observability_attributes(evidence)
+                rag_attrs["rag.duration_ms"] = round((perf_counter() - rag_start) * 1000, 2)
+                set_safe_attributes(span, rag_attrs)
             logger.info(f"[{job_id}] REPORT STAGE: [TEMPLATE] RAG 완료 evidence={len(evidence)}")
 
             with tracer.start_as_current_span("phoenix.cpu_report.build_prompt") as span:
+                set_openinference_span_kind(span, OI_CHAIN)
                 prompt = build_template_report_prompt(
                     metrics=metrics,
                     utterances=patient_utterances or all_utterances,
@@ -258,6 +293,7 @@ async def run_bedrock_report_stage(
             logger.debug(f"[{job_id}] REPORT STAGE: [TEMPLATE] prompt_len={len(prompt)}")
             llm_start = perf_counter()
             with tracer.start_as_current_span("phoenix.cpu_report.invoke_llm") as span:
+                set_openinference_span_kind(span, OI_LLM)
                 set_safe_attributes(span, {
                     "report.path": "template",
                     "llm.provider": "bedrock",
@@ -281,6 +317,7 @@ async def run_bedrock_report_stage(
             # AgentCore 경로: search_evidence tool로 RAG 검색과 SOAP Note 생성을 통합 처리
             logger.info(f"[{job_id}] REPORT STAGE: AGENTCORE 호출 시작 session_id={session_id}")
             with tracer.start_as_current_span("phoenix.cpu_report.build_prompt") as span:
+                set_openinference_span_kind(span, OI_CHAIN)
                 prompt = build_session_prompt(
                     metrics=metrics,
                     utterances=patient_utterances or all_utterances,
@@ -295,6 +332,7 @@ async def run_bedrock_report_stage(
             logger.debug(f"[{job_id}] REPORT STAGE: prompt_len={len(prompt)}")
             llm_start = perf_counter()
             with tracer.start_as_current_span("phoenix.cpu_report.invoke_llm") as span:
+                set_openinference_span_kind(span, OI_LLM)
                 set_safe_attributes(span, {
                     "report.path": "agentcore",
                     "llm.provider": "bedrock-agentcore",
@@ -313,18 +351,19 @@ async def run_bedrock_report_stage(
             logger.info(f"[{job_id}] REPORT STAGE: [FALLBACK] RAG 시작 (agentcore_agent_id 미설정)")
             rag_start = perf_counter()
             with tracer.start_as_current_span("phoenix.cpu_report.rag") as span:
+                set_openinference_span_kind(span, OI_RETRIEVER)
                 set_safe_attributes(span, {"report.path": "fallback", "rag.top_k": settings.rag_top_k})
                 evidence = await retrieve_evidence(
                     metrics=metrics,
                     session=session,
                     embedding_model=embedding_model,
                 )
-                set_safe_attributes(span, {
-                    "rag.evidence_count": len(evidence),
-                    "rag.duration_ms": round((perf_counter() - rag_start) * 1000, 2),
-                })
+                rag_attrs = _rag_observability_attributes(evidence)
+                rag_attrs["rag.duration_ms"] = round((perf_counter() - rag_start) * 1000, 2)
+                set_safe_attributes(span, rag_attrs)
             logger.info(f"[{job_id}] REPORT STAGE: [FALLBACK] RAG 완료 evidence={len(evidence)}")
             with tracer.start_as_current_span("phoenix.cpu_report.build_prompt") as span:
+                set_openinference_span_kind(span, OI_CHAIN)
                 prompt = build_bedrock_report_prompt(
                     metrics=metrics,
                     utterances=patient_utterances or all_utterances,
@@ -340,6 +379,7 @@ async def run_bedrock_report_stage(
             logger.debug(f"[{job_id}] REPORT STAGE: [FALLBACK] prompt_len={len(prompt)}")
             llm_start = perf_counter()
             with tracer.start_as_current_span("phoenix.cpu_report.invoke_llm") as span:
+                set_openinference_span_kind(span, OI_LLM)
                 set_safe_attributes(span, {
                     "report.path": "fallback",
                     "llm.provider": "bedrock",
@@ -355,6 +395,7 @@ async def run_bedrock_report_stage(
 
         logger.info(f"[{job_id}] REPORT STAGE: SAVING")
         with tracer.start_as_current_span("phoenix.cpu_report.persist_report") as span:
+            set_openinference_span_kind(span, OI_CHAIN)
             set_safe_attributes(span, {
                 "report.path": "template" if template_sections else "agentcore" if settings.agentcore_agent_id else "fallback",
                 "report.clinical_flag_count": len(clinical_flags),
