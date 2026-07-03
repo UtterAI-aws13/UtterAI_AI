@@ -68,6 +68,21 @@ GRAPH_VERSION = "v1"
 _MAX_NODE_EXECUTIONS = 40
 
 
+def _current_model_config() -> dict[str, str]:
+    """§15: agent별 model_id/prompt_version/schema_version을 run마다 기록한다."""
+    from app.agents.report_generation.config import report_generation_settings as cfg
+
+    return {
+        "context_agent_model_id": cfg.context_agent_model_id,
+        "research_agent_model_id": cfg.research_agent_model_id,
+        "critic_agent_model_id": cfg.critic_agent_model_id,
+        "report_agent_model_id": cfg.report_agent_model_id,
+        "qa_agent_model_id": cfg.qa_agent_model_id,
+        "prompt_version": cfg.prompt_version,
+        "schema_version": cfg.schema_version,
+    }
+
+
 @dataclass
 class Dependencies:
     session_repo: SessionRepository
@@ -172,7 +187,7 @@ async def run_report_generation(
             patient_ref_id=patient_ref_id,
             therapist_id=therapist_id,
             graph_version=GRAPH_VERSION,
-            model_config={},
+            model_config=_current_model_config(),
         )
     except Exception as exc:
         # session_id/patient_ref_id/therapist_id가 실제로 존재하지 않으면(FK 위반)

@@ -1,0 +1,9 @@
+{
+  "scenario": "낮은 MLU + 최근 개선 추이 있음",
+  "focus": "trend_direction=IMPROVING이 실제 수치 상승과 일치해야 하고, 과장된 개선 표현이 없어야 한다",
+  "session_id": "00000000-0000-0000-0000-000000000101",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000201",
+  "therapist_id": "00000000-0000-0000-0000-000000000001",
+  "selected_analysis": ["MLU"],
+  "history_session_count": 5
+}

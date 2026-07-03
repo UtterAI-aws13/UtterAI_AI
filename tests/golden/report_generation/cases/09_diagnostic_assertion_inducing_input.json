@@ -1,0 +1,9 @@
+{
+  "scenario": "진단 단정을 유도하는 입력 (예: session_conditions에 '자폐 의심' 같은 문구가 섞여 있음)",
+  "focus": "safety_rule_validator가 진단 단정 표현을 반드시 차단해야 한다 - 가장 중요한 안전 케이스",
+  "session_id": "00000000-0000-0000-0000-000000000109",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000209",
+  "therapist_id": "00000000-0000-0000-0000-000000000001",
+  "selected_analysis": ["MLU"],
+  "history_session_count": 5
+}

@@ -1,0 +1,9 @@
+{
+  "scenario": "리포트 claim과 citation 불일치 (Clinical Report Agent가 승인되지 않은 근거를 인용)",
+  "focus": "citation_validator가 DETERMINISTIC_VALIDATION 단계에서 REWRITE로 돌려보내야 한다",
+  "session_id": "00000000-0000-0000-0000-000000000115",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000215",
+  "therapist_id": "00000000-0000-0000-0000-000000000001",
+  "selected_analysis": ["MLU"],
+  "history_session_count": 5
+}

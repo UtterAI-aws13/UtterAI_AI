@@ -1,0 +1,9 @@
+{
+  "scenario": "권한 없는 session ID (therapist_id가 이 세션의 담당자가 아님)",
+  "focus": "LOAD_CONTEXT에서 즉시 UnauthorizedError -> FAILED, Agent 실행 자체가 시작되지 않아야 한다",
+  "session_id": "00000000-0000-0000-0000-000000000020",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000010",
+  "therapist_id": "00000000-0000-0000-0000-000000000999",
+  "selected_analysis": ["MLU"],
+  "history_session_count": 5
+}
