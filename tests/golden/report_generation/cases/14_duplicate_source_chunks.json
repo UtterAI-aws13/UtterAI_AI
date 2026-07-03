@@ -1,0 +1,9 @@
+{
+  "scenario": "동일 source의 유사 chunk가 다수 검색됨 (source diversity 부족)",
+  "focus": "deduplicate_sources tool이 source_id당 상위 2개로 제한해야 한다 (§10.2 tool 계약)",
+  "session_id": "00000000-0000-0000-0000-000000000114",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000214",
+  "therapist_id": "00000000-0000-0000-0000-000000000001",
+  "selected_analysis": ["MLU"],
+  "history_session_count": 5
+}

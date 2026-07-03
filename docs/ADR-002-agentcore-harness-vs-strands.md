@@ -2,11 +2,13 @@
 
 | 항목 | 내용 |
 |---|---|
-| **상태** | Accepted |
+| **상태** | Accepted (리포트 생성 agent 범위는 [ADR-004](./ADR-004-agentic-rag-5-agent-graph.md)로 supersede됨) |
 | **작성일** | 2026-06-30 |
 | **결정자** | UtterAI AI 팀 |
-| **관련 ADR** | [ADR-001-agentic-rag.md](./ADR-001-agentic-rag.md) |
+| **관련 ADR** | [ADR-001-agentic-rag.md](./ADR-001-agentic-rag.md), [ADR-003-insight-map-agent-runtime.md](./ADR-003-insight-map-agent-runtime.md) (예외), [ADR-004-agentic-rag-5-agent-graph.md](./ADR-004-agentic-rag-5-agent-graph.md) (리포트 생성 agent supersede) |
 | **관련 파일** | `app/pipelines/agentcore_client.py` |
+
+> **2026-07-03 갱신**: 리포트 생성 agent에 대한 이 문서의 결정(Managed Harness 채택)은 [ADR-004](./ADR-004-agentic-rag-5-agent-graph.md)로 대체되었다. `report_editing_chatbot`, `insight_map`(ADR-003)에는 여전히 이 문서가 유효하다.
 
 ---
 

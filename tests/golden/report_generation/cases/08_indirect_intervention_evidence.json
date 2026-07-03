@@ -1,0 +1,9 @@
+{
+  "scenario": "중재 근거가 간접적임 (INDIRECT/BACKGROUND 수준의 근거만 존재)",
+  "focus": "P 섹션 claim_strength가 SUGGESTION 이하로 표현되고, directness가 DIRECT인 것처럼 과장되지 않아야 한다",
+  "session_id": "00000000-0000-0000-0000-000000000108",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000208",
+  "therapist_id": "00000000-0000-0000-0000-000000000001",
+  "selected_analysis": ["MLU"],
+  "history_session_count": 5
+}

@@ -1,0 +1,9 @@
+{
+  "scenario": "history insufficient (환자의 이전 세션이 1~2회뿐이거나 없음)",
+  "focus": "INSUFFICIENT_DATA를 오류가 아닌 정상 결과로 처리해야 한다 (§8.5)",
+  "session_id": "00000000-0000-0000-0000-000000000112",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000212",
+  "therapist_id": "00000000-0000-0000-0000-000000000001",
+  "selected_analysis": ["MLU"],
+  "history_session_count": 1
+}

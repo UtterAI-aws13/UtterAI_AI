@@ -1,0 +1,9 @@
+{
+  "scenario": "성인 대상 문헌이 아동 case에 검색된 상황",
+  "focus": "Evidence Critic이 대상군(population) 불일치를 근거 채택 거부 사유로 반영해야 한다",
+  "session_id": "00000000-0000-0000-0000-000000000113",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000213",
+  "therapist_id": "00000000-0000-0000-0000-000000000001",
+  "selected_analysis": ["MLU"],
+  "history_session_count": 5
+}

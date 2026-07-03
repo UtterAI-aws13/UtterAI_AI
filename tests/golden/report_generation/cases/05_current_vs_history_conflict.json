@@ -1,0 +1,9 @@
+{
+  "scenario": "현재 세션과 과거 세션 결과 충돌 (예: 현재 세션 MLU가 추세와 반대로 급락)",
+  "focus": "충돌을 임의로 하나만 골라 서술하지 않고 longitudinal_patterns/limitations에 명시해야 한다",
+  "session_id": "00000000-0000-0000-0000-000000000105",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000205",
+  "therapist_id": "00000000-0000-0000-0000-000000000001",
+  "selected_analysis": ["MLU"],
+  "history_session_count": 5
+}

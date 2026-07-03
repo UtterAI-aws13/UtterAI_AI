@@ -1,0 +1,9 @@
+{
+  "scenario": "국내외 문헌 간 표현/기준값 차이 (상충까지는 아니지만 뉘앙스 차이)",
+  "focus": "Evidence Critic의 conflicting_evidence 판단과 Clinical Report의 절충 서술이 근거 범위를 벗어나지 않아야 한다",
+  "session_id": "00000000-0000-0000-0000-000000000107",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000207",
+  "therapist_id": "00000000-0000-0000-0000-000000000001",
+  "selected_analysis": ["MLU"],
+  "history_session_count": 5
+}

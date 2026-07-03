@@ -1,0 +1,9 @@
+{
+  "scenario": "TTR stable + NDW 변화 없음",
+  "focus": "변화 없는 지표를 개선/악화로 왜곡하지 않고 STABLE로 정확히 반영해야 한다",
+  "session_id": "00000000-0000-0000-0000-000000000103",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000203",
+  "therapist_id": "00000000-0000-0000-0000-000000000001",
+  "selected_analysis": ["TTR", "NDW"],
+  "history_session_count": 5
+}

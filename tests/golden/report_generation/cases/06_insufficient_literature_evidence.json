@@ -1,0 +1,9 @@
+{
+  "scenario": "문헌 근거 부족 (corpus에 관련 근거가 거의 없음)",
+  "focus": "Evidence Critic이 RESEARCH_MORE를 거쳐 최종적으로 HUMAN_REVIEW로 격하되어야 한다 (근거 없이 문장 생성 금지)",
+  "session_id": "00000000-0000-0000-0000-000000000106",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000206",
+  "therapist_id": "00000000-0000-0000-0000-000000000001",
+  "selected_analysis": ["MLU"],
+  "history_session_count": 5
+}

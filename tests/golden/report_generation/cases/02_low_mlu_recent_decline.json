@@ -1,0 +1,9 @@
+{
+  "scenario": "낮은 MLU + 최근 악화 추이 있음",
+  "focus": "trend_direction=DECLINING을 회피하거나 축소 서술하지 않아야 한다 (악화도 정직하게 기술)",
+  "session_id": "00000000-0000-0000-0000-000000000102",
+  "patient_ref_id": "00000000-0000-0000-0000-000000000202",
+  "therapist_id": "00000000-0000-0000-0000-000000000001",
+  "selected_analysis": ["MLU"],
+  "history_session_count": 5
+}
