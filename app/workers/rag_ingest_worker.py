@@ -36,7 +36,8 @@ async def _handle_ingest_async(message: dict, embedding: KUREEmbeddingWrapper) -
     metadata = ChunkMetadata(**message["metadata"])
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        local_path = str(Path(tmp_dir) / Path(key).name)
+        suffix = Path(key).suffix
+        local_path = str(Path(tmp_dir) / f"{metadata.document_id}{suffix}")
         logger.info(f"[ingest] 다운로드: s3://{bucket}/{key}")
         s3_client.download(bucket, key, local_path)
 
