@@ -35,7 +35,9 @@ class ReportGenerationSettings(BaseSettings):
     # tool이 없는 Agent보다 넉넉하게 잡는다.
     context_agent_max_turns: int = 6
     research_agent_max_turns: int = 40
-    critic_agent_max_turns: int = 30
+    # 근거 후보가 많을 때 fetch_document_section/verify_source_metadata 호출이
+    # 늘어나 30으로는 부족한 사례를 실전에서 확인해 50으로 상향했다.
+    critic_agent_max_turns: int = 50
     report_agent_max_turns: int = 6
     qa_agent_max_turns: int = 6
 
