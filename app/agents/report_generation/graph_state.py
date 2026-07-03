@@ -1,5 +1,8 @@
 # Strands Graph의 유일한 실행 상태 모델.
-# Agent 간에 임의 dictionary를 직접 넘기지 않고 이 GraphState를 통해서만 주고받는다.
+# Agent 간에 임의 dictionary를 직접 넘기지 않고 이 ReportGenerationState를 통해서만
+# 주고받는다. strands.multiagent.graph.GraphState(프레임워크 자체 실행 상태)와
+# 이름이 겹치지 않도록 ReportGenerationState로 명명했다 — 이 객체는
+# invocation_state 딕셔너리에 담겨 모든 노드에 공유된다 (Phase 4 graph.py 참고).
 # 참고: 01_production_5_agent_agentic_rag_design.md §6
 from enum import StrEnum
 from typing import Any
@@ -34,7 +37,7 @@ class RetryBudget(BaseModel):
     max_total_model_calls: int = 20
 
 
-class GraphState(BaseModel):
+class ReportGenerationState(BaseModel):
     """Graph 노드 간에 공유되는 유일한 실행 상태.
 
     각 stage 결과는 dict로 보관하고, 해당 stage를 사용하는 노드에서
@@ -60,3 +63,13 @@ class GraphState(BaseModel):
 
     failure_code: str | None = None
     failure_detail: str | None = None
+
+
+# invocation_state에 담기는 값의 키. §6.1 "invocation_state에 넣을 값" 참고.
+STATE_KEY = "report_gen_state"
+SESSION_REPO_KEY = "session_repo"
+PATIENT_HISTORY_REPO_KEY = "patient_history_repo"
+REPORT_REPO_KEY = "report_repo"
+RUN_REPO_KEY = "run_repo"
+SELECTED_ANALYSIS_KEY = "selected_analysis"
+HISTORY_SESSION_COUNT_KEY = "history_session_count"
