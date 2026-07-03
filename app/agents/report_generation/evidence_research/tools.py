@@ -1,10 +1,19 @@
 # Evidence Research Agent tool. 전부 read-only, 논문/가이드 corpus만 검색한다
 # (환자 데이터는 검색하지 않는다 — §9.6).
 #
-# 기존 KURE-v1 + pgvector 검색 인프라(app.rag.retriever/vector_store/semantic_layer)를
-# 그대로 재사용한다. hybrid_search/rerank_evidence는 이 프로젝트에 아직 별도의
-# BM25/reranker 모델이 없어(app.config.settings.rag_rerank_enabled=False) 키워드
-# 중첩도 기반 휴리스틱으로 구현했다 — 실제 reranker 모델 도입 시 교체 대상이다.
+# 검색은 기존 app.rag.rag_graph의 LangGraph 파이프라인(Kiwi 형태소 분석 →
+# ontology.yaml 동의어/관련어 확장 → language_area/metric 메타데이터 필터 →
+# pgvector 검색 → 근거 부족 시 필터 없이 fallback 재검색)을 그대로 재사용한다
+# (app.rag.retriever.Retriever가 이 파이프라인을 감싼 진입점이다).
+#
+# 주의: 이전에는 app.rag.retriever.retrieve_evidence()(Lambda/구 Bedrock
+# 파이프라인용 단순 버전 - Kiwi/ontology/필터를 거치지 않고 raw 쿼리를 그대로
+# 임베딩)를 잘못 재사용했었다. 이 파일은 그 문제를 고쳐 Retriever 파이프라인으로
+# 통일한 버전이다.
+#
+# rerank_evidence는 이 프로젝트에 아직 별도의 cross-encoder reranker 모델이
+# 없어(app.config.settings.rag_rerank_enabled=False) 키워드 중첩도 기반
+# 휴리스틱으로 구현했다 — 실제 reranker 모델 도입 시 교체 대상이다.
 from __future__ import annotations
 
 import asyncio
@@ -38,29 +47,21 @@ def _to_evidence_dict(e) -> dict:
     }
 
 
-async def _search(query: str, top_k: int) -> list[dict]:
-    from app.rag.retriever import retrieve_evidence
+async def _search(query: str, top_k: int, extra_filters: dict | None = None) -> list[dict]:
+    """Kiwi → ontology 확장 → 메타데이터 필터 → pgvector → fallback 파이프라인 전체를 태운다."""
+    from sqlalchemy.ext.asyncio import AsyncSession
 
-    results = await retrieve_evidence(metrics={}, session={}, top_k=top_k, direct_query=query)
-    # retrieve_evidence()는 Bedrock 파이프라인용 dict를 반환한다 (retriever.py 참고).
-    # EvidenceChunk 스키마 필드명에 맞춰 변환한다.
-    return [
-        {
-            "evidence_id": f"{r['document_id']}:{r['chunk_id']}",
-            "source_id": r["document_id"],
-            "chunk_id": r["chunk_id"],
-            "source_type": "",
-            "title": r["title"],
-            "publication_year": None,
-            "population": [],
-            "metrics": [],
-            "language_areas": [],
-            "text": r["content"],
-            "retrieval_score": r["score"],
-            "rerank_score": None,
-        }
-        for r in results
-    ]
+    from app.rag.retriever import Retriever, _get_embedding_model
+    from app.rag.vector_store import VectorStore
+    from app.schemas import RagQuery
+    from app.storage.db import get_engine
+
+    model = _get_embedding_model()
+    async with AsyncSession(get_engine()) as db:
+        vector_store = VectorStore(db)
+        retriever = Retriever(vector_store, model, top_k=top_k, score_threshold=0.0)
+        result = await retriever.retrieve(RagQuery(question=query, filters=extra_filters or {}))
+    return [_to_evidence_dict(e) for e in result.evidence]
 
 
 @tool
@@ -139,35 +140,17 @@ def search_clinical_guidelines(query: str, top_k: int = 10) -> list[dict]:
 
 @tool
 def hybrid_search(query: str, top_k: int = 10) -> list[dict]:
-    """벡터 검색 + ontology 기반 키워드 확장을 결합한 검색.
+    """벡터 검색 + Kiwi 키워드 기반 ontology 확장/메타데이터 필터를 결합한 검색.
+
+    search_korean_evidence와 동일한 Retriever 파이프라인을 사용한다 - 그
+    파이프라인 자체가 이미 "키워드로 유도한 메타데이터 필터 + 벡터 검색"이라는
+    의미의 hybrid 검색이다. 별도 BM25 lexical scoring은 아직 없다 - 도입되면
+    이 tool에서 vector score와 결합하는 방식으로 확장한다.
 
     query: 한국어 자연어 쿼리.
     """
-    from app.rag.semantic_layer import expand_query, get_metadata_filters
-
-    async def _hybrid():
-        from sqlalchemy.ext.asyncio import AsyncSession
-
-        from app.models.embedding_kure import KUREEmbeddingWrapper
-        from app.rag.retriever import _get_embedding_model
-        from app.rag.vector_store import VectorStore
-        from app.storage.db import get_engine
-
-        keywords = query.split()
-        expanded = expand_query(keywords)
-        filters = get_metadata_filters(keywords)
-        query_text = query + " " + " ".join(expanded)
-
-        model: KUREEmbeddingWrapper = _get_embedding_model()
-        embedding = model.predict([query_text])[0]
-
-        async with AsyncSession(get_engine()) as db:
-            store = VectorStore(db)
-            evidence = await store.search(embedding, filters, top_k, score_threshold=0.0)
-        return [_to_evidence_dict(e) for e in evidence]
-
     try:
-        return _run_async_in_thread(_hybrid())
+        return _run_async_in_thread(_search(query, top_k))
     except Exception as exc:
         logger.warning(f"[evidence_research_tool] hybrid_search 실패: {exc}")
         return []
