@@ -24,7 +24,7 @@ from app.agents.report_generation.graph_state import (
     GraphStatus,
     ReportGenerationState,
 )
-from app.agents.report_generation.errors import DuplicateRunError
+from app.agents.report_generation.errors import DuplicateRunError, InvalidSessionStateError
 from app.agents.report_generation.models.common import FailureCode
 from app.agents.report_generation.nodes import (
     ClinicalContextNode,
@@ -74,6 +74,21 @@ class Dependencies:
     patient_history_repo: PatientHistoryRepository
     report_repo: ReportRepository
     run_repo: ReportGenerationRunRepository
+
+
+def build_default_dependencies() -> Dependencies:
+    """Phase 5 Runtime/Worker가 사용하는 기본 SQLAlchemy 기반 의존성 조합."""
+    from app.repositories.patient_history_repository import SqlPatientHistoryRepository
+    from app.repositories.report_generation_run_repository import SqlReportGenerationRunRepository
+    from app.repositories.report_repository import SqlReportRepository
+    from app.repositories.session_repository import SqlSessionRepository
+
+    return Dependencies(
+        session_repo=SqlSessionRepository(),
+        patient_history_repo=SqlPatientHistoryRepository(),
+        report_repo=SqlReportRepository(),
+        run_repo=SqlReportGenerationRunRepository(),
+    )
 
 
 def build_report_generation_graph() -> Graph:
@@ -150,14 +165,22 @@ async def run_report_generation(
         therapist_id=therapist_id,
     )
 
-    await deps.run_repo.create_run(
-        run_id=run_id,
-        session_id=session_id,
-        patient_ref_id=patient_ref_id,
-        therapist_id=therapist_id,
-        graph_version=GRAPH_VERSION,
-        model_config={},
-    )
+    try:
+        await deps.run_repo.create_run(
+            run_id=run_id,
+            session_id=session_id,
+            patient_ref_id=patient_ref_id,
+            therapist_id=therapist_id,
+            graph_version=GRAPH_VERSION,
+            model_config={},
+        )
+    except Exception as exc:
+        # session_id/patient_ref_id/therapist_id가 실제로 존재하지 않으면(FK 위반)
+        # 여기서 바로 걸린다 - 신뢰된 내부 API라도 잘못된 호출자가 있을 수 있으므로
+        # 원본 DB 예외를 그대로 흘려보내지 않고 깨끗한 FAILED 상태로 감싼다.
+        raise InvalidSessionStateError(
+            f"failed to create report_generation_runs row: {exc}"
+        ) from exc
 
     invocation_state: dict[str, Any] = {
         STATE_KEY: initial_state,

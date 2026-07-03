@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     sqs_gpu_inference_queue_url: str = ""
     sqs_report_analysis_queue_url: str = ""
     sqs_rag_ingest_queue_url: str = ""
+    sqs_report_generation_queue_url: str = ""
 
     # Bedrock
     bedrock_region: str = "ap-northeast-2"

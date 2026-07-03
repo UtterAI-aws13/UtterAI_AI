@@ -163,10 +163,11 @@ class SqlReportGenerationRunRepository:
         async with AsyncSession(get_be_engine()) as db:
             row = await db.execute(
                 text("""
-                    SELECT id, therapist_id, status, current_node, retry_budget_json,
-                           quality_scores_json, failure_code, failure_detail
-                    FROM report_generation_runs
-                    WHERE id = CAST(:run_id AS uuid)
+                    SELECT r.id, r.therapist_id, r.status, r.current_node, r.retry_budget_json,
+                           r.quality_scores_json, r.failure_code, r.failure_detail, d.id AS report_draft_id
+                    FROM report_generation_runs r
+                    LEFT JOIN report_drafts d ON d.generation_run_id = r.id
+                    WHERE r.id = CAST(:run_id AS uuid)
                 """),
                 {"run_id": run_id},
             )

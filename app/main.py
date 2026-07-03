@@ -4,7 +4,7 @@
 from fastapi import FastAPI
 
 from app.observability.otel import initialize_observability, instrument_fastapi_app
-from app.api import health, jobs, rag
+from app.api import health, jobs, rag, report_generation
 from app.api.insight_map import router as insight_map_router
 from app.api.report_chat import router as report_chat_router
 
@@ -17,4 +17,5 @@ app.include_router(jobs.router, prefix="/internal/ai/analysis-jobs", tags=["anal
 app.include_router(rag.router, prefix="/ai/rag", tags=["rag"])
 app.include_router(report_chat_router, prefix="/ai", tags=["report-chat"])
 app.include_router(insight_map_router, prefix="/ai/insight-map", tags=["insight-map"])
+app.include_router(report_generation.router, prefix="/internal/ai", tags=["report-generation"])
 instrument_fastapi_app(app)
