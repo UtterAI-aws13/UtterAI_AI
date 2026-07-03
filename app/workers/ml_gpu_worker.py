@@ -117,17 +117,22 @@ def start_worker() -> None:
 
                 asyncio.run(_run())
                 logger.info(f"ML GPU STAGE 완료: job_id={body.get('job_id')}")
+            sqs.delete_message(
+                QueueUrl=settings.sqs_gpu_inference_queue_url,
+                ReceiptHandle=receipt_handle,
+            )
         except Exception as e:
             record_stage_failure("ml-gpu-worker", "message")
             logger.error(f"ML GPU STAGE 실패: {e}")
-        finally:
             try:
-                sqs.delete_message(
+                sqs.change_message_visibility(
                     QueueUrl=settings.sqs_gpu_inference_queue_url,
                     ReceiptHandle=receipt_handle,
+                    VisibilityTimeout=0,
                 )
-            except Exception as del_e:
-                logger.warning(f"[ml-gpu-worker] SQS 메시지 삭제 실패: {del_e}")
+            except Exception as vis_e:
+                logger.warning(f"[ml-gpu-worker] VisibilityTimeout 즉시 해제 실패: {vis_e}")
+        finally:
             stop_event.set()
 
 
