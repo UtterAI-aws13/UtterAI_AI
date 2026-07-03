@@ -59,7 +59,11 @@ def research_evidence(
         message += f"[이전 Critic 피드백 - 반드시 반영]\n{json.dumps(search_feedback, ensure_ascii=False, indent=2)}\n\n"
     message += "위 clinical_priorities/evidence_needs를 지원할 문헌 근거를 검색하라."
 
-    result = agent(message, structured_output_model=EvidenceResearchOutput)
+    result = agent(
+        message,
+        structured_output_model=EvidenceResearchOutput,
+        limits={"turns": cfg.research_agent_max_turns},
+    )
     output = result.structured_output
     if output is None:
         logger.warning("[evidence_research_agent] structured_output이 비어 있음")

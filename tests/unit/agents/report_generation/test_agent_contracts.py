@@ -54,6 +54,27 @@ class TestClinicalContextAgentContract:
         assert result == expected
         assert mock_agent.call_count == 1
 
+    def test_caps_turns_to_avoid_unbounded_retry(self):
+        """실전에서 관측된 버그의 회귀 방지: structured output이 계속 검증에
+        실패하면 Strands가 내부적으로 무한/과다 재시도할 수 있어 turns 상한이
+        반드시 걸려 있어야 한다."""
+        from app.agents.report_generation.clinical_context.agent import analyze_clinical_context
+        from app.agents.report_generation.config import report_generation_settings as cfg
+
+        mock_agent = MagicMock()
+        mock_agent.return_value = MagicMock(
+            structured_output=ClinicalContextOutput(primary_findings=[])
+        )
+
+        with patch(
+            "app.agents.report_generation.clinical_context.agent.build_clinical_context_agent",
+            return_value=mock_agent,
+        ):
+            analyze_clinical_context(_current_session(), _patient_history())
+
+        _, kwargs = mock_agent.call_args
+        assert kwargs.get("limits") == {"turns": cfg.context_agent_max_turns}
+
     def test_retries_once_on_empty_output_then_succeeds(self):
         """§8.6: 실패 시 한 번 재시도하고 다시 실패하면 예외."""
         from app.agents.report_generation.clinical_context.agent import analyze_clinical_context
@@ -201,3 +222,108 @@ class TestQualityAssuranceAgentContract:
         )
         result = _enforce_pass_gate(output)
         assert result.decision == "REWRITE"
+
+
+def _good_report_for_turns_test():
+    from app.agents.report_generation.clinical_report.schemas import ClinicalReportOutput
+    from app.agents.report_generation.models.report import SoapDraft, SoapReasoningPlan
+
+    return ClinicalReportOutput(
+        reasoning_plan=SoapReasoningPlan(S=[], O=[], A=[], P=[]),
+        soap=SoapDraft(S="s", O="o", A="a", P="p"),
+        claims=[],
+    )
+
+
+class TestAllAgentsCapTurnsToAvoidUnboundedRetry:
+    """실전 버그 회귀 방지: 5개 Agent 전부 limits={"turns": N}을 걸어야 한다.
+
+    이게 없으면 structured output이 스키마 검증에 계속 실패할 때 Strands가
+    내부적으로 과다 재시도해 비용이 통제 없이 쌓일 수 있다 (로컬 데모에서
+    EvidenceCriticOutput 생성이 148회 연속 실패한 채 멈추지 않은 사례로 확인됨).
+    """
+
+    def test_evidence_research_agent(self):
+        from app.agents.report_generation.clinical_context.schemas import ClinicalContextOutput
+        from app.agents.report_generation.config import report_generation_settings as cfg
+        from app.agents.report_generation.evidence_research.agent import research_evidence
+        from app.agents.report_generation.evidence_research.schemas import EvidenceResearchOutput
+
+        mock_agent = MagicMock()
+        mock_agent.return_value = MagicMock(
+            structured_output=EvidenceResearchOutput(requirements=[], queries=[], candidates=[])
+        )
+        with patch(
+            "app.agents.report_generation.evidence_research.agent.build_evidence_research_agent",
+            return_value=mock_agent,
+        ):
+            research_evidence(ClinicalContextOutput(primary_findings=[]))
+
+        _, kwargs = mock_agent.call_args
+        assert kwargs.get("limits") == {"turns": cfg.research_agent_max_turns}
+
+    def test_evidence_critic_agent(self):
+        from app.agents.report_generation.config import report_generation_settings as cfg
+        from app.agents.report_generation.evidence_critic.agent import critique_evidence
+        from app.agents.report_generation.evidence_critic.schemas import EvidenceCriticOutput
+        from app.agents.report_generation.evidence_research.schemas import EvidenceResearchOutput
+
+        mock_agent = MagicMock()
+        mock_agent.return_value = MagicMock(structured_output=EvidenceCriticOutput(decision="ACCEPT"))
+        with patch(
+            "app.agents.report_generation.evidence_critic.agent.build_evidence_critic_agent",
+            return_value=mock_agent,
+        ):
+            critique_evidence(EvidenceResearchOutput(requirements=[], queries=[], candidates=[]))
+
+        _, kwargs = mock_agent.call_args
+        assert kwargs.get("limits") == {"turns": cfg.critic_agent_max_turns}
+
+    def test_clinical_report_agent(self):
+        from app.agents.report_generation.clinical_context.schemas import ClinicalContextOutput
+        from app.agents.report_generation.clinical_report.agent import write_report
+        from app.agents.report_generation.config import report_generation_settings as cfg
+        from app.agents.report_generation.evidence_critic.schemas import EvidenceCriticOutput
+
+        mock_agent = MagicMock()
+        mock_agent.return_value = MagicMock(structured_output=_good_report_for_turns_test())
+        with patch(
+            "app.agents.report_generation.clinical_report.agent.build_clinical_report_agent",
+            return_value=mock_agent,
+        ):
+            write_report(
+                ClinicalContextOutput(primary_findings=[]), _current_session(), _patient_history(),
+                EvidenceCriticOutput(decision="ACCEPT"),
+            )
+
+        _, kwargs = mock_agent.call_args
+        assert kwargs.get("limits") == {"turns": cfg.report_agent_max_turns}
+
+    def test_quality_assurance_agent(self):
+        from app.agents.report_generation.clinical_context.schemas import ClinicalContextOutput
+        from app.agents.report_generation.config import report_generation_settings as cfg
+        from app.agents.report_generation.evidence_critic.schemas import EvidenceCriticOutput
+        from app.agents.report_generation.models.quality import QualityScores
+        from app.agents.report_generation.quality_assurance.agent import assess_quality
+        from app.agents.report_generation.quality_assurance.schemas import QualityAssuranceOutput
+
+        mock_agent = MagicMock()
+        mock_agent.return_value = MagicMock(
+            structured_output=QualityAssuranceOutput(
+                decision="PASS",
+                scores=QualityScores(groundedness=1, citation_correctness=1, patient_context_fidelity=1,
+                                      longitudinal_consistency=1, soap_compliance=1, safety=1, overall=1),
+                route_reason="x",
+            )
+        )
+        with patch(
+            "app.agents.report_generation.quality_assurance.agent.build_quality_assurance_agent",
+            return_value=mock_agent,
+        ):
+            assess_quality(
+                ClinicalContextOutput(primary_findings=[]), _current_session(), _patient_history(),
+                EvidenceCriticOutput(decision="ACCEPT"), _good_report_for_turns_test(),
+            )
+
+        _, kwargs = mock_agent.call_args
+        assert kwargs.get("limits") == {"turns": cfg.qa_agent_max_turns}

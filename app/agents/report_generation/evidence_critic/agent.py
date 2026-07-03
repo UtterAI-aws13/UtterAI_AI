@@ -40,7 +40,11 @@ def critique_evidence(research_result: EvidenceResearchOutput) -> EvidenceCritic
         f"{research_result.model_dump_json(indent=2)}\n\n"
         "위 requirements coverage와 candidates 품질을 심사하라."
     )
-    result = agent(message, structured_output_model=EvidenceCriticOutput)
+    result = agent(
+        message,
+        structured_output_model=EvidenceCriticOutput,
+        limits={"turns": cfg.critic_agent_max_turns},
+    )
     output = result.structured_output
     if output is None:
         logger.warning("[evidence_critic_agent] structured_output이 비어 있음")

@@ -27,6 +27,18 @@ class ReportGenerationSettings(BaseSettings):
     max_qa_routes: int = 3
     max_total_model_calls: int = 20
 
+    # Agent 호출 1회당 최대 turn 수 (strands Agent의 limits={"turns": N}).
+    # 이 상한이 없으면 structured output이 스키마 검증에 계속 실패할 때 Strands가
+    # 내부적으로 무한(또는 매우 큰) 재시도를 해 비용이 통제 없이 쌓일 수 있다
+    # (로컬 데모에서 EvidenceCriticOutput 생성이 148회 연속 실패한 채 안 끝난 사례로 확인).
+    # tool을 쓰는 Agent(Research/Critic)는 정상 작업만으로도 turn 수가 많이 나오므로
+    # tool이 없는 Agent보다 넉넉하게 잡는다.
+    context_agent_max_turns: int = 6
+    research_agent_max_turns: int = 40
+    critic_agent_max_turns: int = 30
+    report_agent_max_turns: int = 6
+    qa_agent_max_turns: int = 6
+
     qa_groundedness_threshold: float = 0.90
     qa_citation_threshold: float = 0.95
     qa_context_fidelity_threshold: float = 0.95

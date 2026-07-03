@@ -66,7 +66,11 @@ def analyze_clinical_context(
     last_error: Exception | None = None
     for attempt in range(max_retries + 1):
         try:
-            result = agent(message, structured_output_model=ClinicalContextOutput)
+            result = agent(
+                message,
+                structured_output_model=ClinicalContextOutput,
+                limits={"turns": cfg.context_agent_max_turns},
+            )
             if result.structured_output is not None:
                 return result.structured_output
             last_error = ValueError("structured_output이 비어 있음")

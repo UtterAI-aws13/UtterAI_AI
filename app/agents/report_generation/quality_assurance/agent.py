@@ -76,7 +76,11 @@ def assess_quality(
     )
 
     agent = build_quality_assurance_agent()
-    result = agent(message, structured_output_model=QualityAssuranceOutput)
+    result = agent(
+        message,
+        structured_output_model=QualityAssuranceOutput,
+        limits={"turns": cfg.qa_agent_max_turns},
+    )
     output = result.structured_output
     if output is None:
         logger.warning("[quality_assurance_agent] structured_output이 비어 있음")

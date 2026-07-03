@@ -49,7 +49,11 @@ def write_report(
     message += "\n\n위 정보로 SOAP 리포트 초안을 작성하라."
 
     agent = build_clinical_report_agent()
-    result = agent(message, structured_output_model=ClinicalReportOutput)
+    result = agent(
+        message,
+        structured_output_model=ClinicalReportOutput,
+        limits={"turns": cfg.report_agent_max_turns},
+    )
     output = result.structured_output
     if output is None:
         logger.warning("[clinical_report_agent] structured_output이 비어 있음")
