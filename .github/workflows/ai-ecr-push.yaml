@@ -387,20 +387,26 @@ jobs:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
         run: |
           IMAGE_URI="${ECR_REGISTRY}/${ECR_KURE_RETRIEVER_REPOSITORY}:${IMAGE_TAG}"
-          LATEST_URI="${ECR_REGISTRY}/${ECR_KURE_RETRIEVER_REPOSITORY}:latest"
 
           echo "Build KURE retriever image: $IMAGE_URI"
-          docker build -f lambda/kure_retriever/Dockerfile -t "$IMAGE_URI" -t "$LATEST_URI" .
+          docker build -f lambda/kure_retriever/Dockerfile -t "$IMAGE_URI" .
 
           echo "Push KURE retriever image: $IMAGE_URI"
           docker push "$IMAGE_URI"
-          docker push "$LATEST_URI"
 
           echo "KURE_RETRIEVER_IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
 
       # Lambda(package_type=Image)는 ECR에 새 이미지를 푸시하는 것만으로 재배포되지 않는다.
-      # Terraform은 image_uri를 latest로 고정하고 lifecycle.ignore_changes로 무시하므로,
-      # 실제 배포는 이 단계에서 update-function-code로 직접 트리거한다.
+      # Terraform은 image_uri를 최초 부트스트랩 시점의 :latest로 고정하고 이후
+      # lifecycle.ignore_changes로 무시하므로, 실제 배포는 이 단계에서
+      # update-function-code로 직접 트리거한다.
+      #
+      # :latest는 더 이상 이 워크플로에서 (재)push하지 않는다 - ECR 리포지토리가
+      # imageTagMutability=IMMUTABLE로 버전 관리를 강제하도록 의도적으로 설정돼
+      # 있어서, 매번 :latest를 덮어쓰려던 이전 방식은 두 번째 실행부터 항상
+      # 실패했다(실제로 CI가 이 에러로 계속 죽었다). :latest는 최초 부트스트랩
+      # 이미지를 가리키는 채로 고정해도 무방하다 - 이후 배포는 전부 버전 태그
+      # 기반 update-function-code로만 이뤄진다.
       #
       # 최초 부트스트랩 시점에는 이 Lambda 함수가 아직 terraform apply되지 않아
       # 존재하지 않을 수 있다 (aws_lambda_function은 package_type=Image라
