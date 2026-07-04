@@ -25,6 +25,7 @@ from app.pipelines.report_pipeline import run_bedrock_report_stage
 from app.models.vad_silero import SileroVADWrapper
 from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.storage.rds import get_be_engine
+from app.workers.report_generation_worker import run_loop as run_report_generation_loop
 
 
 def _extend_report_visibility(sqs, queue_url: str, receipt_handle: str, stop_event: threading.Event, interval: int = 240) -> None:
@@ -206,6 +207,15 @@ def start_worker() -> None:
         daemon=True,
     )
     report_thread.start()
+
+    # 5-Agent 리포트 생성 큐도 같은 pod/프로세스에서 별도 스레드로 폴링한다 -
+    # 전용 워커 Deployment를 새로 만들지 않고 기존 cpu-worker의 멀티 큐 구조에
+    # 얹는다(위 report_thread와 동일 패턴).
+    report_generation_thread = threading.Thread(
+        target=run_report_generation_loop,
+        daemon=True,
+    )
+    report_generation_thread.start()
 
     _run_preprocess_loop(models)
 

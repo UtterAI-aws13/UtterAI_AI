@@ -37,7 +37,7 @@ def _make_sqs_client():
     return boto3.client("sqs", region_name=settings.aws_region)
 
 
-def _run_loop() -> None:
+def run_loop() -> None:
     logger.info(f"Report Generation Worker 시작. 큐: {settings.sqs_report_generation_queue_url}")
     sqs = _make_sqs_client()
 
@@ -136,8 +136,11 @@ def _run_loop() -> None:
 
 
 def start_worker() -> None:
+    """독립 실행용 진입점. cpu_worker.py처럼 이미 다른 워커와 같은 프로세스에서
+    같이 도는 경우에는 initialize_observability() 중복 호출을 피하기 위해
+    run_loop()을 직접 스레드로 돌린다."""
     initialize_observability()
-    _run_loop()
+    run_loop()
 
 
 if __name__ == "__main__":
