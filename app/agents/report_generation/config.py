@@ -51,6 +51,14 @@ class ReportGenerationSettings(BaseSettings):
     enable_bedrock_guardrails: bool = False
     bedrock_guardrail_id: str = ""
 
+    # 비어있으면(기본값) Evidence Research Agent는 in-process 검색 함수를 그대로 쓴다
+    # (app.agents.report_generation.evidence_research.tools). 채워지면 대신 이
+    # AgentCore Gateway(MCP, AWS_IAM 인증)를 통해 kure_retriever Lambda의 7개
+    # tool을 원격 호출한다 - 둘은 같은 파이프라인을 공유하므로(Lambda가 같은
+    # @tool 함수를 재사용) 동작은 동일하고 실행 위치만 달라진다.
+    evidence_research_gateway_url: str = ""
+    evidence_research_gateway_region: str = "ap-northeast-2"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
