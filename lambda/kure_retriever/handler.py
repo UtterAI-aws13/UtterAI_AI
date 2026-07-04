@@ -86,6 +86,13 @@ def lambda_handler(event: dict, context) -> dict:
     event: 호출된 tool의 입력 파라미터 (예: {"query_ko": "...", "top_k": 5}).
     """
     if event.get("query") == "ping" or event.get("query_ko") == "ping":
+        # KURE-v1 임베딩 모델을 실제로 로드해 이 실행 환경(warm container)에
+        # 캐싱해둔다. AgentCore Gateway의 tool 호출은 ~30초에서 끊기는데, 모델
+        # 로드(수십 초)를 여기서 미리 안 해두면 실제 검색 요청이 매번 그 안에서
+        # 콜드 로드까지 겹쳐 타임아웃난다 (실제 호출로 확인함) - DB는 안 거친다.
+        from app.rag.retriever import _get_embedding_model
+
+        _get_embedding_model().predict(["ping"])
         return {"statusCode": 200, "body": json.dumps([])}
 
     full_tool_name = _resolve_tool_name(context) or ""
