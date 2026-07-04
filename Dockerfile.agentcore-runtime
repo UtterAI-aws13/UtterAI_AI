@@ -1,0 +1,25 @@
+# 5-Agent 리포트 생성 Graph를 AgentCore Runtime으로 호스팅하는 이미지.
+# report_generation.deployment:agentcore_entrypoint가 하는 일(Strands Graph
+# 실행, RDS 조회, Bedrock 호출, AgentCore Gateway 경유 검색)은 KURE 임베딩
+# 모델이 필요 없으므로 cpu-worker(Dockerfile.cpu)의 무거운 ML extra(torch,
+# sentence-transformers 등)는 설치하지 않는다 - base 의존성만으로 충분하다.
+FROM python:3.11-slim
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+WORKDIR /app
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+
+COPY app ./app
+
+ENV PYTHONPATH=/app
+ENV PATH="/app/.venv/bin:$PATH"
+
+EXPOSE 8080
+
+RUN adduser --disabled-password --uid 1000 appuser
+USER 1000
+
+CMD ["python", "-m", "app.agents.report_generation.deployment"]

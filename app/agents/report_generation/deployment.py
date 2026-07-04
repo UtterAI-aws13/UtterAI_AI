@@ -57,3 +57,9 @@ def create_agentcore_runtime():
     app = BedrockAgentCoreApp()
     app.entrypoint(agentcore_entrypoint)
     return app
+
+
+if __name__ == "__main__":
+    # AgentCore Runtime 컨테이너의 CMD 진입점. AWS의 invocation 프로토콜에 맞춰
+    # BedrockAgentCoreApp이 자체적으로 8080 포트에 /invocations, /ping을 서빙한다.
+    create_agentcore_runtime().run()
