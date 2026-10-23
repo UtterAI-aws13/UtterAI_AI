@@ -4,8 +4,9 @@
 # 담당 단계: 화자 분리 + STT → transcript draft 저장 → 완료 (리포트 큐는 BE finalize가 발행)
 import asyncio
 import json
-import signal
-import threading
+
+from botocore.config import Config
+from app.workers.lifecycle import Lifecycle, VISIBILITY_SECONDS, start_heartbeat, stop_heartbeat
 
 import boto3
 from loguru import logger
@@ -23,22 +24,8 @@ from app.models.diarization_pyannote import PyannoteWrapper
 from app.models.asr_whisper import WhisperASRWrapper
 from app.storage.rds import get_be_engine
 
-_shutdown = threading.Event()
-
-
-def _extend_visibility(sqs_client, queue_url: str, receipt_handle: str, stop_event: threading.Event, interval: int = 240) -> None:
-    # receive 직후 즉시 연장 후 interval마다 반복 — 큐 기본 visibility timeout에 무관하게 동작
-    while True:
-        try:
-            sqs_client.change_message_visibility(
-                QueueUrl=queue_url,
-                ReceiptHandle=receipt_handle,
-                VisibilityTimeout=1800,
-            )
-        except Exception as e:
-            logger.warning(f"[heartbeat] VisibilityTimeout 연장 실패: {e}")
-        if stop_event.wait(interval):
-            break
+_runtime = Lifecycle()
+_visibility_client = None
 
 
 def _load_models() -> MLGpuModels:
@@ -61,18 +48,29 @@ def _load_models() -> MLGpuModels:
 
 
 def start_worker() -> None:
-    signal.signal(signal.SIGTERM, lambda *_: _shutdown.set())
-
+    global _visibility_client
+    _visibility_client = boto3.client(
+        "sqs",
+        region_name=settings.aws_region,
+        config=Config(connect_timeout=1, read_timeout=2, retries={"max_attempts": 0}),
+    )
+    _runtime.start()
     initialize_observability()
-    sqs = boto3.client("sqs", region_name=settings.aws_region)
+    sqs = boto3.client(
+        "sqs",
+        region_name=settings.aws_region,
+        config=Config(connect_timeout=2, read_timeout=25, retries={"max_attempts": 1}),
+    )
     models = _load_models()
+    _runtime.mark_ready()
     logger.info(f"ML GPU Worker 시작. 큐: {settings.sqs_gpu_inference_queue_url}")
 
-    while not _shutdown.is_set():
+    while not _runtime.stop.is_set():
         try:
             response = sqs.receive_message(
                 QueueUrl=settings.sqs_gpu_inference_queue_url,
                 MaxNumberOfMessages=1,
+                VisibilityTimeout=VISIBILITY_SECONDS,
                 WaitTimeSeconds=20,
                 MessageAttributeNames=["All"],
             )
@@ -86,18 +84,15 @@ def start_worker() -> None:
 
         raw = messages[0]
         receipt_handle = raw["ReceiptHandle"]
-        body = json.loads(raw["Body"])
-        message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
-
-        stop_event = threading.Event()
-        heartbeat = threading.Thread(
-            target=_extend_visibility,
-            args=(sqs, settings.sqs_gpu_inference_queue_url, receipt_handle, stop_event),
-            daemon=True,
+        if not _runtime.accept(sqs, settings.sqs_gpu_inference_queue_url, receipt_handle):
+            continue
+        handle = start_heartbeat(
+            _visibility_client, settings.sqs_gpu_inference_queue_url, receipt_handle
         )
-        heartbeat.start()
-
+        body = {}
         try:
+            body = json.loads(raw["Body"])
+            message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
             tracer = trace.get_tracer(__name__)
             with tracer.start_as_current_span(
                 "worker.ml_gpu.message",
@@ -117,6 +112,7 @@ def start_worker() -> None:
 
                 asyncio.run(_run())
                 logger.info(f"ML GPU STAGE 완료: job_id={body.get('job_id')}")
+            stop_heartbeat(handle)
             sqs.delete_message(
                 QueueUrl=settings.sqs_gpu_inference_queue_url,
                 ReceiptHandle=receipt_handle,
@@ -124,6 +120,7 @@ def start_worker() -> None:
         except Exception as e:
             record_stage_failure("ml-gpu-worker", "message")
             logger.error(f"ML GPU STAGE 실패: {e}")
+            stop_heartbeat(handle)
             try:
                 sqs.change_message_visibility(
                     QueueUrl=settings.sqs_gpu_inference_queue_url,
@@ -133,7 +130,8 @@ def start_worker() -> None:
             except Exception as vis_e:
                 logger.warning(f"[ml-gpu-worker] VisibilityTimeout 즉시 해제 실패: {vis_e}")
         finally:
-            stop_event.set()
+            stop_heartbeat(handle)
+            _runtime.finish()
 
 
 if __name__ == "__main__":

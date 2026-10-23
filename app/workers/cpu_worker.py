@@ -7,6 +7,9 @@ import asyncio
 import json
 import threading
 
+from botocore.config import Config
+from app.workers.lifecycle import Lifecycle, VISIBILITY_SECONDS, start_heartbeat, stop_heartbeat
+
 import boto3
 from loguru import logger
 from opentelemetry import trace
@@ -16,7 +19,12 @@ from app.config import settings
 from app.observability.otel import initialize_observability
 from app.observability.metrics import record_sqs_receive
 from app.observability.metrics import record_stage_failure
-from app.observability.phoenix import OI_CHAIN, safe_id, set_openinference_span_kind, set_safe_attributes
+from app.observability.phoenix import (
+    OI_CHAIN,
+    safe_id,
+    set_openinference_span_kind,
+    set_safe_attributes,
+)
 from app.observability.sqs import extract_context_from_message_attributes
 from app.schemas import JobMessage
 from app.schemas.job import ReportJobMessage
@@ -26,19 +34,8 @@ from app.models.vad_silero import SileroVADWrapper
 from app.models.embedding_kure import KUREEmbeddingWrapper
 from app.storage.rds import get_be_engine
 
-
-def _extend_report_visibility(sqs, queue_url: str, receipt_handle: str, stop_event: threading.Event, interval: int = 240) -> None:
-    while True:
-        try:
-            sqs.change_message_visibility(
-                QueueUrl=queue_url,
-                ReceiptHandle=receipt_handle,
-                VisibilityTimeout=1800,
-            )
-        except Exception as e:
-            logger.warning(f"[report-heartbeat] VisibilityTimeout 연장 실패: {e}")
-        if stop_event.wait(interval):
-            break
+_runtime = Lifecycle()
+_visibility_client = None
 
 
 def _load_models() -> CPUModels:
@@ -54,19 +51,23 @@ def _load_models() -> CPUModels:
 
 
 def _make_sqs_client():
-    return boto3.client("sqs", region_name=settings.aws_region)
+    return boto3.client(
+        "sqs",
+        region_name=settings.aws_region,
+        config=Config(connect_timeout=2, read_timeout=25, retries={"max_attempts": 1}),
+    )
 
 
 def _run_preprocess_loop(models: CPUModels) -> None:
     logger.info(f"CPU Worker 시작. 큐: {settings.sqs_audio_preprocess_queue_url}")
     sqs = _make_sqs_client()
-    while True:
+    while not _runtime.stop.is_set():
         try:
             response = sqs.receive_message(
                 QueueUrl=settings.sqs_audio_preprocess_queue_url,
                 MaxNumberOfMessages=1,
                 WaitTimeSeconds=20,
-                VisibilityTimeout=300,
+                VisibilityTimeout=VISIBILITY_SECONDS,
                 MessageAttributeNames=["All"],
             )
         except Exception as e:
@@ -80,10 +81,15 @@ def _run_preprocess_loop(models: CPUModels) -> None:
 
         raw = messages[0]
         receipt_handle = raw["ReceiptHandle"]
-        body = json.loads(raw["Body"])
-        message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
-
+        if not _runtime.accept(sqs, settings.sqs_audio_preprocess_queue_url, receipt_handle):
+            continue
+        handle = start_heartbeat(
+            _visibility_client, settings.sqs_audio_preprocess_queue_url, receipt_handle
+        )
+        body = {}
         try:
+            body = json.loads(raw["Body"])
+            message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
             tracer = trace.get_tracer(__name__)
             with tracer.start_as_current_span(
                 "worker.cpu.message",
@@ -93,12 +99,16 @@ def _run_preprocess_loop(models: CPUModels) -> None:
                 set_openinference_span_kind(span, OI_CHAIN)
                 record_sqs_receive("cpu-worker")
                 job = JobMessage(**body)
-                set_safe_attributes(span, {
-                    "session.hash": safe_id(job.session_id),
-                    "job.hash": safe_id(job.job_id),
-                    "worker.queue": "audio-preprocess",
-                })
+                set_safe_attributes(
+                    span,
+                    {
+                        "session.hash": safe_id(job.session_id),
+                        "job.hash": safe_id(job.job_id),
+                        "worker.queue": "audio-preprocess",
+                    },
+                )
                 asyncio.run(run_cpu_stage(job, models))
+                stop_heartbeat(handle)
                 sqs.delete_message(
                     QueueUrl=settings.sqs_audio_preprocess_queue_url,
                     ReceiptHandle=receipt_handle,
@@ -107,18 +117,21 @@ def _run_preprocess_loop(models: CPUModels) -> None:
         except Exception as e:
             record_stage_failure("cpu-worker", "message")
             logger.error(f"CPU STAGE 실패: {e}")
+        finally:
+            stop_heartbeat(handle)
+            _runtime.finish()
 
 
 def _run_report_loop(embedding: KUREEmbeddingWrapper) -> None:
     logger.info(f"Report Worker 시작. 큐: {settings.sqs_report_analysis_queue_url}")
     sqs = _make_sqs_client()
-    while True:
+    while not _runtime.stop.is_set():
         try:
             response = sqs.receive_message(
                 QueueUrl=settings.sqs_report_analysis_queue_url,
                 MaxNumberOfMessages=1,
                 WaitTimeSeconds=20,
-                VisibilityTimeout=600,
+                VisibilityTimeout=VISIBILITY_SECONDS,
                 MessageAttributeNames=["All"],
             )
         except Exception as e:
@@ -133,24 +146,16 @@ def _run_report_loop(embedding: KUREEmbeddingWrapper) -> None:
         raw = messages[0]
         receipt_handle = raw["ReceiptHandle"]
 
+        if not _runtime.accept(sqs, settings.sqs_report_analysis_queue_url, receipt_handle):
+            continue
+        handle = start_heartbeat(
+            _visibility_client, settings.sqs_report_analysis_queue_url, receipt_handle
+        )
+        job_id = "unknown"
         try:
             body = json.loads(raw["Body"])
             job_id = body.get("job_id", "unknown")
-            logger.info(f"[report-loop] 메시지 수신 job_id={job_id} transcript_id={body.get('transcript_id')}")
             message_context = extract_context_from_message_attributes(raw.get("MessageAttributes"))
-        except Exception as e:
-            logger.exception(f"[report-loop] 메시지 파싱 실패: {e}")
-            continue
-
-        stop_event = threading.Event()
-        heartbeat = threading.Thread(
-            target=_extend_report_visibility,
-            args=(sqs, settings.sqs_report_analysis_queue_url, receipt_handle, stop_event),
-            daemon=True,
-        )
-        heartbeat.start()
-
-        try:
             tracer = trace.get_tracer(__name__)
             with tracer.start_as_current_span(
                 "worker.report.message",
@@ -160,12 +165,15 @@ def _run_report_loop(embedding: KUREEmbeddingWrapper) -> None:
                 set_openinference_span_kind(span, OI_CHAIN)
                 record_sqs_receive("cpu-worker-report")
                 msg = ReportJobMessage(**body)
-                set_safe_attributes(span, {
-                    "session.hash": safe_id(msg.session_id),
-                    "job.hash": safe_id(msg.job_id),
-                    "transcript.hash": safe_id(msg.transcript_id),
-                    "worker.queue": "report-analysis",
-                })
+                set_safe_attributes(
+                    span,
+                    {
+                        "session.hash": safe_id(msg.session_id),
+                        "job.hash": safe_id(msg.job_id),
+                        "transcript.hash": safe_id(msg.transcript_id),
+                        "worker.queue": "report-analysis",
+                    },
+                )
 
                 logger.info(f"[report-loop] BE DB 세션 열기 job_id={job_id}")
 
@@ -176,6 +184,7 @@ def _run_report_loop(embedding: KUREEmbeddingWrapper) -> None:
                         )
 
                 asyncio.run(_run())
+                stop_heartbeat(handle)
                 sqs.delete_message(
                     QueueUrl=settings.sqs_report_analysis_queue_url,
                     ReceiptHandle=receipt_handle,
@@ -184,6 +193,7 @@ def _run_report_loop(embedding: KUREEmbeddingWrapper) -> None:
         except Exception as e:
             record_stage_failure("cpu-worker", "report")
             logger.exception(f"[report-loop] REPORT STAGE 실패 job_id={job_id}: {e}")
+            stop_heartbeat(handle)
             try:
                 sqs.change_message_visibility(
                     QueueUrl=settings.sqs_report_analysis_queue_url,
@@ -193,21 +203,34 @@ def _run_report_loop(embedding: KUREEmbeddingWrapper) -> None:
             except Exception as vis_e:
                 logger.warning(f"[report-loop] VisibilityTimeout 즉시 해제 실패: {vis_e}")
         finally:
-            stop_event.set()
+            stop_heartbeat(handle)
+            _runtime.finish()
 
 
 def start_worker() -> None:
+    global _visibility_client
+    _visibility_client = boto3.client(
+        "sqs",
+        region_name=settings.aws_region,
+        config=Config(connect_timeout=1, read_timeout=2, retries={"max_attempts": 0}),
+    )
+    _runtime.start()
     initialize_observability()
     models = _load_models()
+    _runtime.mark_ready()
 
     report_thread = threading.Thread(
         target=_run_report_loop,
         args=(models.embedding,),
-        daemon=True,
+        daemon=False,
     )
     report_thread.start()
 
-    _run_preprocess_loop(models)
+    try:
+        _run_preprocess_loop(models)
+    finally:
+        _runtime.drain()
+        report_thread.join()
 
 
 if __name__ == "__main__":
